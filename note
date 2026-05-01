@@ -1,0 +1,54 @@
+QUICK START — Telecom Big Campaign Bot (Node.js)
+==================================================
+
+1. Cài Node.js >= 20 (nếu chưa):
+   brew install node
+
+2. Cài dependencies:
+   cd /Users/chilevan/Desktop/CTYAI
+   npm install
+   # (lần đầu sẽ tải Chromium ~150MB cho Puppeteer)
+
+3. Cấu hình .env:
+   cp .env.example .env
+   # Mở .env, điền:
+   #   OPENAI_API_KEY      → https://platform.openai.com/api-keys
+   #   ADMIN_API_KEY       → tự đặt chuỗi bất kỳ
+   #   ALLOWED_GROUP_NAMES → tên group WhatsApp (chính xác từng ký tự, để trống = tất cả)
+
+4. Tạo demo data:
+   npm run seed
+
+5. Chạy bot:
+   npm start
+   # → in QR code ra terminal lần đầu
+   # → mở WhatsApp trên điện thoại → Settings → Linked Devices → Link a Device → quét QR
+   # → phiên lưu vào data/wa-session/, các lần sau tự đăng nhập
+
+6. Add bot vào group có team leader.
+
+7. Tạo campaign + upload template:
+   curl -X POST http://localhost:3000/admin/campaigns \
+     -H "x-api-key: $ADMIN_API_KEY" \
+     -F "code=PROMO_LIMA_001" \
+     -F "name=Promoción Plan Postpago Marzo" \
+     -F "template_requirements=Banner đỏ, promotor mặc đồng phục..." \
+     -F "target_subscribers=20" \
+     -F "branch_id=1" \
+     -F "template_image=@/path/to/template.jpg"
+
+8. Test workflow:
+   - Team leader gửi ảnh + caption "CAMPAIGN PROMO_LIMA_001" vào group
+   - Bot tag tên + reply (Sí/cần sửa) bằng tiếng TBN
+   - Cuối ngày: ảnh + "END PROMO_LIMA_001 SUBS=23" → bot tổng kết
+
+9. Test vision không cần WhatsApp:
+   npm run test:vision -- ./template.jpg ./photo.jpg "PROMO_LIMA_001"
+
+10. Xem báo cáo:
+    curl -H "x-api-key: $ADMIN_API_KEY" \
+         "http://localhost:3000/admin/daily-reports?campaign_code=PROMO_LIMA_001"
+
+Stack: Node.js · whatsapp-web.js (Puppeteer) · OpenAI gpt-4o · better-sqlite3 · Express
+Code Python cũ: _archive_python/
+Chi tiết: README.md
