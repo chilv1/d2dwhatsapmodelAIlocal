@@ -69,9 +69,49 @@ function buildStructuredRequirements(jsonStr) {
   return out;
 }
 
+// GPS extraction schema (shared cho cả 2 modes — Hướng 1 strict + Hướng 2 detection)
+// Dùng để OCR NoteCam-style stamp text trong ảnh ("Latitud: -10.92...", v.v.)
+const GPS_SCHEMA_PROPS = {
+  type: 'object',
+  properties: {
+    latitude: { type: ['number', 'null'] },
+    longitude: { type: ['number', 'null'] },
+    elevation_m: { type: ['number', 'null'] },
+    accuracy_m: { type: ['number', 'null'] },
+    captured_at: { type: ['string', 'null'] },
+    note: { type: ['string', 'null'] },
+  },
+  required: ['latitude', 'longitude', 'elevation_m', 'accuracy_m', 'captured_at', 'note'],
+  additionalProperties: false,
+};
+
+const GPS_PROMPT_INSTRUCTIONS = `
+
+GPS extraction (BẮT BUỘC kiểm tra Ảnh 2):
+Tìm overlay text với format kiểu NoteCam/cam app:
+  "Latitud: -10.925708" hoặc "Lat: -10.92..."
+  "Longitud: -74.873829" hoặc "Long: -74.87..."
+  "Elevación: 524.09 m" (optional)
+  "Precisión: 4.75 m" (optional)
+  "Tiempo: 01-05-2026 16:55:59" (optional)
+  "Nota: JUNCD10" (optional)
+
+Trả về:
+- gps.latitude: số decimal (NEGATIVE nếu Nam/Tây hemisphere — Peru luôn negative cho cả lat lẫn lng)
+- gps.longitude: số decimal (negative)
+- gps.elevation_m: số mét (chỉ số, bỏ "±X m")
+- gps.accuracy_m: số mét precision
+- gps.captured_at: chuỗi nguyên dạng "01-05-2026 16:55:59"
+- gps.note: chuỗi nguyên dạng (vd "JUNCD10")
+
+Nếu Ảnh 2 KHÔNG có overlay text GPS → tất cả fields = null.
+KHÔNG suy đoán, KHÔNG generate fake coords. Chỉ extract khi text rõ ràng.
+Validate: lat ∈ [-90, 90], lng ∈ [-180, 180]. Nếu out of range → null.`;
+
 const EVALUATION_SCHEMA = {
   type: 'object',
   properties: {
+    gps: GPS_SCHEMA_PROPS,
     similarity_score: {
       type: 'integer',
       minimum: 0,
@@ -103,6 +143,7 @@ const EVALUATION_SCHEMA = {
     },
   },
   required: [
+    'gps',
     'similarity_score',
     'meets_standard',
     'matches',
@@ -147,7 +188,7 @@ Nếu thiếu BẤT KỲ REQUIRED nào → meets_standard = false (bất kể sc
 OUTPUT FORMAT:
 - feedback_for_user: tiếng Tây Ban Nha, 1–2 câu, nếu có issues phải gọi tên item bị thiếu (đúng tên trong checklist).
 - needs_resubmit = true khi meets_standard = false.
-- Trả về JSON đúng schema, không thêm field.`;
+- Trả về JSON đúng schema, không thêm field.${GPS_PROMPT_INSTRUCTIONS}`;
 
 // Soft prompt cho text fallback (legacy campaigns chưa migrate sang structured editor)
 const SYSTEM_PROMPT_TEXT = `Bạn là chuyên gia QA cho Telecom Big — công ty viễn thông tại Peru.
@@ -172,7 +213,7 @@ Cách tính similarity_score (0–100):
 meets_standard = true ⟺ score >= {THRESHOLD} VÀ tất cả REQUIRED đều có.
 matches và feedback phải nhất quán.
 
-feedback_for_user: tiếng Tây Ban Nha, 1–2 câu. Trả về JSON đúng schema.`;
+feedback_for_user: tiếng Tây Ban Nha, 1–2 câu. Trả về JSON đúng schema.${GPS_PROMPT_INSTRUCTIONS}`;
 
 // ──────────────── Hướng 2: Detection-only mode ────────────────
 // Schema + prompt khi setting `vision.detection_mode_enabled` = '1'.
@@ -181,6 +222,7 @@ feedback_for_user: tiếng Tây Ban Nha, 1–2 câu. Trả về JSON đúng sche
 const DETECTION_SCHEMA = {
   type: 'object',
   properties: {
+    gps: GPS_SCHEMA_PROPS,
     detections: {
       type: 'array',
       items: {
@@ -198,7 +240,7 @@ const DETECTION_SCHEMA = {
     image_quality: { type: 'string', enum: ['good', 'fair', 'poor'] },
     feedback_for_user: { type: 'string' },
   },
-  required: ['detections', 'image_quality', 'feedback_for_user'],
+  required: ['gps', 'detections', 'image_quality', 'feedback_for_user'],
   additionalProperties: false,
 };
 
@@ -220,7 +262,7 @@ QUY TẮC:
    - 'poor': mờ, ngược sáng, hoặc quá xa
 5. feedback_for_user: tiếng Tây Ban Nha 1-2 câu. Nếu có item not found → gọi tên item đó.
 
-Trả về JSON đúng schema.`;
+Trả về JSON đúng schema.${GPS_PROMPT_INSTRUCTIONS}`;
 
 /**
  * Tính similarity_score + meets_standard từ detections (deterministic, no AI).
@@ -341,6 +383,7 @@ async function runDetectionMode({
     issues: computed.issues,
     feedback_for_user: parsed.feedback_for_user,
     needs_resubmit: computed.needs_resubmit,
+    gps: parsed.gps || null,
     _detections: computed._detections,
     _image_quality: computed._image_quality,
   };

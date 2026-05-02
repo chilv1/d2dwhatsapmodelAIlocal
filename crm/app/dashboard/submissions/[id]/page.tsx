@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { ResultBadge, SubmissionTypeBadge } from '@/components/result-badge';
+import { SubmissionMap } from '@/components/submission-map';
 import {
   ArrowLeft,
   MapPin,
@@ -443,21 +444,36 @@ export default async function SubmissionDetailPage({ params }: { params: Params 
                   '—'}
               </dd>
             </div>
-            <div>
-              <dt className="text-xs font-medium text-muted-foreground">GPS</dt>
+            <div className="sm:col-span-2">
+              <dt className="text-xs font-medium text-muted-foreground mb-1">GPS</dt>
               <dd>
-                {map ? (
-                  <a
-                    href={map}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline inline-flex items-center gap-1"
-                  >
-                    <MapPin className="h-3.5 w-3.5" />
-                    {sub.gpsLatitude?.toFixed(5)}, {sub.gpsLongitude?.toFixed(5)}
-                  </a>
+                {sub.gpsLatitude != null && sub.gpsLongitude != null ? (
+                  <div className="space-y-2">
+                    <SubmissionMap
+                      lat={sub.gpsLatitude}
+                      lng={sub.gpsLongitude}
+                      address={sub.gpsAddress}
+                      height={250}
+                    />
+                    <div className="flex items-center justify-between text-xs">
+                      <a
+                        href={map!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1 font-mono"
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        {sub.gpsLatitude.toFixed(6)}, {sub.gpsLongitude.toFixed(6)}
+                      </a>
+                      {sub.gpsAddress && (
+                        <span className="text-muted-foreground truncate ml-2">
+                          {sub.gpsAddress}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 ) : (
-                  '—'
+                  <span className="text-muted-foreground">— (chưa có GPS)</span>
                 )}
               </dd>
             </div>

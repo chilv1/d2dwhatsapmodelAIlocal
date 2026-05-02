@@ -82,6 +82,40 @@ export function saveMediaBuffer(buffer, mimetype = 'image/jpeg') {
 }
 
 /**
+ * Pick GPS từ vision OCR (priority) → fallback WA location pairing.
+ * Validate coords trong range hợp lệ, build gpsAddress từ metadata.
+ * @returns {{lat: number|null, lng: number|null, address: string|null}}
+ */
+function pickGps({ visionGps, fallbackLat, fallbackLng, fallbackAddress }) {
+  // Vision OCR result
+  if (
+    visionGps &&
+    typeof visionGps.latitude === 'number' &&
+    typeof visionGps.longitude === 'number' &&
+    visionGps.latitude >= -90 &&
+    visionGps.latitude <= 90 &&
+    visionGps.longitude >= -180 &&
+    visionGps.longitude <= 180
+  ) {
+    const meta = [];
+    if (visionGps.elevation_m != null) meta.push(`elev ${visionGps.elevation_m}m`);
+    if (visionGps.accuracy_m != null) meta.push(`±${visionGps.accuracy_m}m`);
+    if (visionGps.captured_at) meta.push(visionGps.captured_at);
+    if (visionGps.note) meta.push(`note: ${visionGps.note}`);
+    return {
+      lat: visionGps.latitude,
+      lng: visionGps.longitude,
+      address: meta.length > 0 ? meta.join(' | ') : null,
+    };
+  }
+  // Fallback (WA location pairing)
+  if (typeof fallbackLat === 'number' && typeof fallbackLng === 'number') {
+    return { lat: fallbackLat, lng: fallbackLng, address: fallbackAddress ?? 'WA location pin' };
+  }
+  return { lat: null, lng: null, address: null };
+}
+
+/**
  * Build base submission payload (fields chung cho mọi loại submission).
  */
 function buildBaseSubmission({
@@ -272,6 +306,13 @@ export async function handleImageSubmission({
   }
 
   const evaluationResult = evaluation.meets_standard ? 'approved' : 'rejected';
+  // GPS: ưu tiên vision OCR (NoteCam stamp) → fallback WA location pairing
+  const gps = pickGps({
+    visionGps: evaluation.gps,
+    fallbackLat: gpsLatitude,
+    fallbackLng: gpsLongitude,
+    fallbackAddress: gpsAddress,
+  });
   const sub = await insertSubmission({
     ...buildBaseSubmission({
       leaderId: leader.id,
@@ -279,9 +320,9 @@ export async function handleImageSubmission({
       submissionType: parsed.type,
       imagePath,
       caption,
-      gpsLatitude,
-      gpsLongitude,
-      gpsAddress,
+      gpsLatitude: gps.lat,
+      gpsLongitude: gps.lng,
+      gpsAddress: gps.address,
       waMessageId,
       waChatId,
       waSenderNumber,

@@ -25,6 +25,29 @@ let client;
 // Track xem QR đã gửi qua Telegram session này chưa — tránh spam (QR refresh mỗi ~60s)
 let qrSentToTelegramThisSession = false;
 
+// WA Location pairing: nhớ location pin gần nhất per sender (TTL 5 phút)
+// Dùng làm fallback GPS khi ảnh không có NoteCam stamp.
+const recentLocations = new Map(); // senderNumber → { lat, lng, ts }
+const LOCATION_TTL_MS = 5 * 60 * 1000;
+
+function getRecentLocationFor(sender) {
+  const v = recentLocations.get(sender);
+  if (!v) return null;
+  if (Date.now() - v.ts > LOCATION_TTL_MS) {
+    recentLocations.delete(sender);
+    return null;
+  }
+  return { lat: v.lat, lng: v.lng };
+}
+
+// Cleanup expired locations mỗi 60s
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of recentLocations) {
+    if (now - v.ts > LOCATION_TTL_MS) recentLocations.delete(k);
+  }
+}, 60_000).unref();
+
 export function getClient() {
   return client;
 }
@@ -152,6 +175,20 @@ async function onMessage(msg) {
     'incoming message',
   );
 
+  // Xử lý location pin: lưu vào memory map để pair với ảnh sau (TTL 5 phút)
+  if (msg.type === 'location' && msg.location) {
+    recentLocations.set(senderNumber, {
+      lat: Number(msg.location.latitude),
+      lng: Number(msg.location.longitude),
+      ts: Date.now(),
+    });
+    logger.info(
+      { senderNumber, lat: msg.location.latitude, lng: msg.location.longitude },
+      'Stored WA location pin for fallback GPS pairing',
+    );
+    return;
+  }
+
   // Xử lý ảnh
   if (msg.type === 'image' && msg.hasMedia) {
     await handleIncomingImage(msg, chat, senderNumber, senderName);
@@ -193,8 +230,9 @@ async function handleIncomingImage(msg, chat, senderNumber, senderName) {
   const buffer = Buffer.from(media.data, 'base64');
   const imagePath = saveMediaBuffer(buffer, media.mimetype);
 
-  // GPS: whatsapp-web.js không trả EXIF → để null. Nếu user gửi LOCATION riêng,
-  // có thể mở rộng sau bằng cách lưu location message liền kề.
+  // GPS: whatsapp-web.js strip EXIF → priority cho vision OCR (NoteCam stamp).
+  // Pass WA location pin (nếu sender vừa gửi trong 5 phút) làm fallback cho handler.
+  const fallbackLoc = getRecentLocationFor(senderNumber);
   const result = await handleImageSubmission({
     waMessageId: msg.id._serialized,
     waChatId: chat.id._serialized,
@@ -202,9 +240,9 @@ async function handleIncomingImage(msg, chat, senderNumber, senderName) {
     waSenderName: senderName,
     imagePath,
     caption: msg.body || '',
-    gpsLatitude: null,
-    gpsLongitude: null,
-    gpsAddress: null,
+    gpsLatitude: fallbackLoc?.lat ?? null,
+    gpsLongitude: fallbackLoc?.lng ?? null,
+    gpsAddress: fallbackLoc ? 'WA location pin' : null,
   });
 
   await sendReply(chat, msg, result.reply, senderNumber);
