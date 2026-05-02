@@ -49,6 +49,11 @@ export async function overrideSubmissionAction(formData: FormData) {
   }
 
   const isClear = newResult === 'clear';
+  // Phase C.4: track firstReviewedAt cho SLA computation
+  const curRecord = await prisma.submission.findUnique({
+    where: { id },
+    select: { firstReviewedAt: true },
+  });
   await prisma.submission.update({
     where: { id },
     data: {
@@ -56,8 +61,8 @@ export async function overrideSubmissionAction(formData: FormData) {
       overrideUserId: isClear ? null : userId,
       overrideReason: isClear ? null : reason,
       overriddenAt: isClear ? null : new Date(),
-      // Cập nhật evaluationResult chính (effective verdict)
       evaluationResult: isClear ? cur.evaluationResult : newResult,
+      ...(curRecord?.firstReviewedAt ? {} : { firstReviewedAt: new Date() }),
     },
   });
 
@@ -279,4 +284,89 @@ export async function bulkDeleteAction(formData: FormData) {
 
   revalidatePath('/dashboard/submissions');
   revalidatePath('/dashboard');
+}
+
+/**
+ * Phase B.3: Add comment/note vào submission. Tự động set firstReviewedAt nếu chưa có.
+ */
+export async function addCommentAction(formData: FormData) {
+  const session = await requireRole(['admin', 'branch_manager', 'viewer']);
+  const userId = parseInt(session.user.id, 10);
+
+  const submissionId = parseInt(String(formData.get('submission_id') || ''), 10);
+  const body = String(formData.get('body') || '').trim();
+
+  if (Number.isNaN(submissionId)) throw new Error('Bad submission_id');
+  if (!body) throw new Error('Comment body là bắt buộc');
+  if (body.length > 2000) throw new Error('Comment quá dài (max 2000 chars)');
+
+  const sub = await prisma.submission.findUnique({
+    where: { id: submissionId },
+    select: { firstReviewedAt: true, campaignId: true },
+  });
+  if (!sub) throw new Error('Submission not found');
+
+  // Branch scope cho branch_manager
+  if (session.user.role === 'branch_manager' && sub.campaignId) {
+    const camp = await prisma.campaign.findUnique({
+      where: { id: sub.campaignId },
+      select: { branchId: true },
+    });
+    if (camp?.branchId !== session.user.branchId) {
+      throw new Error('Không có quyền comment submission của chi nhánh khác');
+    }
+  }
+
+  await prisma.submissionComment.create({
+    data: { submissionId, userId, body },
+  });
+
+  // Set firstReviewedAt nếu đây là review action đầu tiên
+  if (!sub.firstReviewedAt) {
+    await prisma.submission.update({
+      where: { id: submissionId },
+      data: { firstReviewedAt: new Date() },
+    });
+  }
+
+  await audit({
+    userId,
+    action: 'submission.comment_add',
+    entityType: 'submission',
+    entityId: submissionId,
+    newValue: { body: body.slice(0, 200) },
+  });
+
+  revalidatePath(`/dashboard/submissions/${submissionId}`);
+}
+
+/**
+ * Phase B.3: Delete comment (admin only OR own comment).
+ */
+export async function deleteCommentAction(formData: FormData) {
+  const session = await requireRole(['admin', 'branch_manager', 'viewer']);
+  const userId = parseInt(session.user.id, 10);
+
+  const id = parseInt(String(formData.get('id') || ''), 10);
+  if (Number.isNaN(id)) throw new Error('Bad id');
+
+  const cmt = await prisma.submissionComment.findUnique({ where: { id } });
+  if (!cmt) return;
+
+  // Auth: admin xoá được mọi comment, others chỉ xoá comment của mình
+  if (session.user.role !== 'admin' && cmt.userId !== userId) {
+    throw new Error('Bạn chỉ xoá được comment của chính mình');
+  }
+
+  await prisma.submissionComment.delete({ where: { id } });
+
+  await audit({
+    userId,
+    action: 'submission.comment_delete',
+    entityType: 'submission',
+    entityId: cmt.submissionId,
+    oldValue: { commentId: id, body: cmt.body.slice(0, 200) },
+  });
+
+  revalidatePath(`/dashboard/submissions/${cmt.submissionId}`);
 }

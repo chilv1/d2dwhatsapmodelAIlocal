@@ -29,6 +29,38 @@ import {
   isThrottled,
   recordMetric,
 } from './cache.js';
+import { checkImageQuality } from './image-quality.js';
+import { prisma } from './db.js';
+
+// Phase B: Multi-image grouping per sender (30s window).
+// Khi promotor gửi nhiều ảnh liên tiếp KHÔNG có caption → attach vào active submission.
+const MULTI_IMAGE_WINDOW_MS = 30_000;
+const activeSubmissions = new Map(); // senderNumber → { submissionId, expiresAt }
+
+function getActiveSubmissionFor(sender) {
+  const v = activeSubmissions.get(sender);
+  if (!v) return null;
+  if (Date.now() > v.expiresAt) {
+    activeSubmissions.delete(sender);
+    return null;
+  }
+  return v.submissionId;
+}
+
+function markActiveSubmission(sender, submissionId) {
+  activeSubmissions.set(sender, {
+    submissionId,
+    expiresAt: Date.now() + MULTI_IMAGE_WINDOW_MS,
+  });
+}
+
+// Cleanup expired entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of activeSubmissions) {
+    if (v.expiresAt < now) activeSubmissions.delete(k);
+  }
+}, 60_000).unref();
 
 const CAMPAIGN_RE = /CAMPAIGN\s+(\S+)/i;
 const END_RE = /END\s+(\S+).*?SUBS\s*=\s*(\d+)/is;
@@ -182,6 +214,66 @@ export async function handleImageSubmission({
         reply: 'Tin nhắn đã được xử lý trước đó.',
         submission: existing,
       };
+    }
+  }
+
+  // Phase B.2: Image quality pre-check trước khi tốn API
+  const quality = checkImageQuality(imagePath);
+  if (!quality.ok) {
+    const leader2 = await getOrCreateTeamLeader(waSenderNumber, waSenderName);
+    logger.warn({ reason: quality.reason, imagePath }, 'Image quality pre-check failed');
+    const sub = await insertSubmission({
+      ...buildBaseSubmission({
+        leaderId: leader2.id,
+        campaignId: null,
+        submissionType: 'campaign_start',
+        imagePath,
+        caption,
+        gpsLatitude,
+        gpsLongitude,
+        gpsAddress,
+        waMessageId,
+        waChatId,
+        waSenderNumber,
+        waSenderName,
+      }),
+      evaluationResult: 'needs_review',
+      aiFeedback: `❌ Ảnh không đạt chuẩn quality: ${quality.reason}. Vui lòng chụp lại với ánh sáng/độ nét tốt hơn.`,
+      qualityFailed: true,
+      qualityFailReason: quality.reason,
+    });
+    return {
+      reply: `⚠️ Ảnh không đạt chuẩn (${quality.reason}). Vui lòng chụp lại.`,
+      submission: sub,
+    };
+  }
+
+  // Phase B.1: Multi-image grouping — nếu sender vừa gửi submission có caption trong 30s
+  // và ảnh hiện tại KHÔNG có caption → attach làm ảnh phụ thay vì tạo submission mới
+  if (waSenderNumber && (!caption || !caption.trim())) {
+    const activeId = getActiveSubmissionFor(waSenderNumber);
+    if (activeId) {
+      try {
+        const order = await prisma.submissionImage.count({ where: { submissionId: activeId } });
+        const hash = imageHash(imagePath);
+        await prisma.submissionImage.create({
+          data: {
+            submissionId: activeId,
+            imagePath,
+            imageOrder: order + 1,
+            imageHash: hash,
+          },
+        });
+        logger.info({ activeId, order: order + 1, sender: waSenderNumber }, 'Attached additional image to active submission');
+        // Refresh window
+        markActiveSubmission(waSenderNumber, activeId);
+        return {
+          reply: `📎 Đã thêm ảnh #${order + 1} vào submission #${activeId}.`,
+          submission: { id: activeId },
+        };
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Multi-image attach failed — fallback to new submission');
+      }
     }
   }
 
@@ -360,7 +452,18 @@ export async function handleImageSubmission({
     return { reply: msg, submission: sub };
   }
 
-  const evaluationResult = evaluation.meets_standard ? 'approved' : 'rejected';
+  // Phase B.5: AI confidence low → route sang needs_review thay vì approved/rejected
+  // Detection mode trả về _detections với confidence per item. Nếu BẤT KỲ required item
+  // có confidence='low' → admin cần review manually.
+  let evaluationResult = evaluation.meets_standard ? 'approved' : 'rejected';
+  if (evaluation._detections && Array.isArray(evaluation._detections)) {
+    const hasLowConfidence = evaluation._detections.some((d) => d.confidence === 'low');
+    if (hasLowConfidence) {
+      evaluationResult = 'needs_review';
+      logger.info({ submissionId: 'pending', detections: evaluation._detections.filter(d => d.confidence === 'low').map(d => d.label) }, 'Routed to needs_review due to low confidence');
+    }
+  }
+
   // GPS: ưu tiên vision OCR (NoteCam stamp) → fallback WA location pairing
   const gps = pickGps({
     visionGps: evaluation.gps,
@@ -391,6 +494,23 @@ export async function handleImageSubmission({
     aiRawResponse: JSON.stringify(evaluation),
     visionCached: !!cachedEval,
   });
+
+  // Phase B.1: Tạo SubmissionImage row cho primary image + mark active để multi-image attach sau
+  try {
+    await prisma.submissionImage.create({
+      data: {
+        submissionId: sub.id,
+        imagePath,
+        imageOrder: 0,
+        imageHash: hash,
+      },
+    });
+    if (waSenderNumber) {
+      markActiveSubmission(waSenderNumber, sub.id);
+    }
+  } catch (err) {
+    logger.warn({ err: err.message, submissionId: sub.id }, 'Failed to create primary SubmissionImage row');
+  }
 
   if (parsed.type === 'campaign_end') {
     const startSub = await findTodayStartSubmission(campaign.id);

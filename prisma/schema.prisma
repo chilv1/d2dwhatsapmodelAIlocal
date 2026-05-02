@@ -118,12 +118,19 @@ model Submission {
   // Vision cache tracking — true nếu evaluation lấy từ cache (không gọi API)
   visionCached          Boolean   @default(false) @map("vision_cached")
 
-  teamLeader        TeamLeader?   @relation(fields: [teamLeaderId], references: [id])
-  campaign          Campaign?     @relation(fields: [campaignId], references: [id])
-  promotor          Promotor?     @relation(fields: [promotorId], references: [id])
-  overrideUser      User?         @relation("submissionOverrides", fields: [overrideUserId], references: [id])
-  startOfDayReports DailyReport[] @relation("StartSubmission")
-  endOfDayReports   DailyReport[] @relation("EndSubmission")
+  // Phase B — quality pre-check + first review SLA
+  qualityFailed         Boolean   @default(false) @map("quality_failed")
+  qualityFailReason     String?   @map("quality_fail_reason")
+  firstReviewedAt       DateTime? @map("first_reviewed_at")
+
+  teamLeader        TeamLeader?         @relation(fields: [teamLeaderId], references: [id])
+  campaign          Campaign?           @relation(fields: [campaignId], references: [id])
+  promotor          Promotor?           @relation(fields: [promotorId], references: [id])
+  overrideUser      User?               @relation("submissionOverrides", fields: [overrideUserId], references: [id])
+  startOfDayReports DailyReport[]       @relation("StartSubmission")
+  endOfDayReports   DailyReport[]       @relation("EndSubmission")
+  images            SubmissionImage[]
+  comments          SubmissionComment[]
 
   @@index([campaignId, submittedAt])
   @@map("submissions")
@@ -165,7 +172,8 @@ model User {
 
   branch              Branch?      @relation(fields: [branchId], references: [id])
   auditLogs           AuditLog[]
-  submissionOverrides Submission[] @relation("submissionOverrides")
+  submissionOverrides Submission[]        @relation("submissionOverrides")
+  submissionComments  SubmissionComment[]
   notificationLogs    NotificationLog[]
 
   @@map("users")
@@ -217,6 +225,35 @@ model Setting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+// Phase B: Multi-image submission — promotor gửi nhiều ảnh cùng campaign trong 30s window
+// → group thành 1 submission với N images. Submission.imagePath = primary (first).
+model SubmissionImage {
+  id           Int      @id @default(autoincrement())
+  submissionId Int      @map("submission_id")
+  imagePath    String   @map("image_path")
+  imageOrder   Int      @default(0) @map("image_order")
+  imageHash    String?  @map("image_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  @@index([submissionId, imageOrder])
+  @@map("submission_images")
+}
+
+// Phase B: Comment/note system per submission — admin/manager add ghi chú internal
+model SubmissionComment {
+  id           Int      @id @default(autoincrement())
+  submissionId Int      @map("submission_id")
+  userId       Int      @map("user_id")
+  body         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+  @@index([submissionId, createdAt])
+  @@map("submission_comments")
 }
 
 // Daily aggregated metrics cho bot performance (cache hit rate, throttle count, ...)

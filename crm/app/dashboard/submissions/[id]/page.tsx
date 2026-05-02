@@ -26,9 +26,11 @@ import {
   AlertCircle,
   ShieldCheck,
 } from 'lucide-react';
-import { overrideSubmissionAction, deleteSubmissionAction } from '@/lib/actions/submission';
+import { overrideSubmissionAction, deleteSubmissionAction, addCommentAction, deleteCommentAction } from '@/lib/actions/submission';
 import { assignPromotorToSubmissionAction } from '@/lib/actions/promotor';
 import { DeleteSubmissionButton } from '@/components/delete-submission-button';
+import { CommentForm } from '@/components/comment-form';
+import { MessageSquare, History, Image as ImageIcon } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,9 +59,22 @@ export default async function SubmissionDetailPage({ params }: { params: Params 
       teamLeader: { include: { branch: true } },
       overrideUser: { select: { name: true, email: true } },
       promotor: { select: { id: true, name: true, employeeCode: true } },
+      images: { orderBy: { imageOrder: 'asc' } },
+      comments: {
+        include: { user: { select: { name: true, email: true, role: true } } },
+        orderBy: { createdAt: 'desc' },
+      },
     },
   });
   if (!sub) notFound();
+
+  // Phase B.4: Load audit timeline cho submission này
+  const auditEntries = await prisma.auditLog.findMany({
+    where: { entityType: 'submission', entityId: id },
+    include: { user: { select: { name: true, email: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+  });
 
   // Branch scoping: branch_manager chỉ xem được data branch mình
   if (
@@ -498,6 +513,138 @@ export default async function SubmissionDetailPage({ params }: { params: Params 
           </dl>
         </CardContent>
       </Card>
+
+      {/* Phase B.1: Multi-image gallery (nếu submission có ảnh phụ) */}
+      {sub.images.length > 1 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Ảnh phụ ({sub.images.length} ảnh)
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Promotor gửi nhiều ảnh trong 30 giây — AI evaluate ảnh chính, các ảnh phụ chỉ làm reference visual.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {sub.images.map((img) => {
+                const url = fileUrl(img.imagePath);
+                if (!url) return null;
+                return (
+                  <a
+                    key={img.id}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-md border overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={`Image ${img.imageOrder}`}
+                      loading="lazy"
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="text-xs text-center py-1 text-muted-foreground bg-muted/30">
+                      #{img.imageOrder}
+                      {img.imageOrder === 0 && ' (primary)'}
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Phase B.3: Comments / notes */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageSquare className="h-4 w-4" />
+            Notes ({sub.comments.length})
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Internal notes giữa các admin/manager về submission này.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <CommentForm submissionId={sub.id} action={addCommentAction} />
+          {sub.comments.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic text-center py-4">
+              Chưa có note nào.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {sub.comments.map((c) => {
+                const canDelete = role === 'admin' || c.userId === parseInt(session.user.id, 10);
+                return (
+                  <div key={c.id} className="rounded-md border p-3 bg-muted/20">
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 text-xs">
+                        <Badge variant={c.user.role === 'admin' ? 'default' : 'secondary'} className="text-[10px]">
+                          {c.user.role}
+                        </Badge>
+                        <span className="font-medium">{c.user.name || c.user.email}</span>
+                        <span className="text-muted-foreground">{formatDateTime(c.createdAt)}</span>
+                      </div>
+                      {canDelete && (
+                        <form action={deleteCommentAction}>
+                          <input type="hidden" name="id" value={c.id} />
+                          <Button type="submit" size="sm" variant="ghost" className="h-6 w-6 p-0">
+                            <XCircle className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </form>
+                      )}
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{c.body}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Phase B.4: Audit trail timeline */}
+      {auditEntries.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Lịch sử thay đổi ({auditEntries.length})
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Mọi action (override, comment, delete...) được log tự động.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ol className="space-y-2 border-l-2 border-muted ml-2">
+              {auditEntries.map((a) => (
+                <li key={a.id} className="relative pl-4">
+                  <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full bg-primary border-2 border-background" />
+                  <div className="text-xs text-muted-foreground">
+                    {formatDateTime(a.createdAt)} — {a.user?.name || a.user?.email || 'system'}
+                  </div>
+                  <div className="text-sm font-medium">{a.action}</div>
+                  {(a.oldValue || a.newValue) && (
+                    <details className="text-xs mt-1">
+                      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                        Chi tiết
+                      </summary>
+                      <pre className="mt-1 p-2 bg-muted/30 rounded text-[11px] overflow-x-auto">
+                        {a.newValue && `+ ${a.newValue}\n`}
+                        {a.oldValue && `- ${a.oldValue}`}
+                      </pre>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
