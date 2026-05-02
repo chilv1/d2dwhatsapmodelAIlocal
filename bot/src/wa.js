@@ -246,24 +246,41 @@ async function handleIncomingImage(msg, chat, senderNumber, senderName) {
     gpsAddress: fallbackLoc ? 'WA location pin' : null,
   });
 
-  logger.info({ submissionId: result.submission?.id, replyLen: result.reply?.length }, 'submission processed, sending reply');
-  await sendReply(chat, msg, result.reply, senderNumber);
+  logger.info({ submissionId: result.submission?.id, replyLen: result.reply?.length, hasMedia: !!result.mediaPath }, 'submission processed, sending reply');
+  await sendReply(chat, msg, result.reply, senderNumber, result.mediaPath);
   logger.info({ submissionId: result.submission?.id }, 'reply sent');
 }
 
 /**
- * Reply trong group (mention sender) hoặc DM tuỳ config.
+ * Load media từ disk → MessageMedia. Trả null nếu lỗi (caller fallback text-only).
  */
-async function sendReply(chat, originalMsg, body, senderNumber) {
+function loadMedia(mediaPath) {
+  if (!mediaPath) return null;
+  try {
+    return MessageMedia.fromFilePath(mediaPath);
+  } catch (err) {
+    logger.warn({ err: err.message, mediaPath }, 'Failed to load media — fallback text only');
+    return null;
+  }
+}
+
+/**
+ * Reply trong group (mention sender) hoặc DM tuỳ config.
+ * mediaPath (optional): path ảnh đính kèm; body sẽ thành caption.
+ */
+async function sendReply(chat, originalMsg, body, senderNumber, mediaPath = null) {
   const mode = config.replyMode;
+  const media = loadMedia(mediaPath);
+  // wweb signature: sendMessage(content, options). Khi có media: content=media, body→options.caption.
+  const content = media || body;
+  const baseOpts = media ? { caption: body } : {};
 
   if (mode === 'dm' && chat.isGroup) {
-    // DM cho người gửi
     try {
-      await client.sendMessage(senderNumber, body);
+      await client.sendMessage(senderNumber, content, baseOpts);
     } catch (err) {
       logger.error({ err: err.message }, 'Failed to DM, falling back to group');
-      await chat.sendMessage(body);
+      await chat.sendMessage(content, baseOpts);
     }
     return;
   }
@@ -271,30 +288,46 @@ async function sendReply(chat, originalMsg, body, senderNumber) {
   // Reply trong chat hiện tại (group hoặc 1-1)
   try {
     if (chat.isGroup) {
-      // Mention sender để nổi bật. Detect @lid format (linked id) — không support mention
-      // theo cùng cách như @c.us; fallback gửi text plain trong group.
       const senderId = senderNumber || '';
       const isLidFormat = senderId.endsWith('@lid');
       if (isLidFormat) {
-        // @lid không mentionable → gửi reply thường, không mention
-        await chat.sendMessage(body, {
+        await chat.sendMessage(content, {
+          ...baseOpts,
           quotedMessageId: originalMsg.id._serialized,
         });
       } else {
-        await chat.sendMessage(`@${senderId.split('@')[0]} ${body}`, {
-          mentions: [senderId],
-          quotedMessageId: originalMsg.id._serialized,
-        });
+        // Mention sender. Khi có media, caption đã chứa body — prepend mention vào caption.
+        if (media) {
+          await chat.sendMessage(content, {
+            caption: `@${senderId.split('@')[0]} ${body}`,
+            mentions: [senderId],
+            quotedMessageId: originalMsg.id._serialized,
+          });
+        } else {
+          await chat.sendMessage(`@${senderId.split('@')[0]} ${body}`, {
+            mentions: [senderId],
+            quotedMessageId: originalMsg.id._serialized,
+          });
+        }
       }
     } else {
-      await originalMsg.reply(body);
+      if (media) {
+        await chat.sendMessage(content, baseOpts);
+      } else {
+        await originalMsg.reply(body);
+      }
     }
   } catch (err) {
     logger.error({ err: err.message, stack: err.stack?.slice(0, 500) }, 'sendReply failed');
-    // Last resort: try plain sendMessage without quote/mention
+    // Last resort: nếu media fail, thử text-only. Nếu text fail, log và bỏ qua.
     try {
-      await chat.sendMessage(body);
-      logger.info('sendReply fallback (no quote/mention) succeeded');
+      if (media) {
+        logger.warn('media send failed → retry text-only');
+        await chat.sendMessage(body);
+      } else {
+        await chat.sendMessage(body);
+      }
+      logger.info('sendReply fallback succeeded');
     } catch (err2) {
       logger.error({ err: err2.message }, 'sendReply fallback also failed');
     }

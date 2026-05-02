@@ -33,6 +33,7 @@ import { checkImageQuality } from './image-quality.js';
 import { prisma } from './db.js';
 import { notifyAdmins } from './telegram.js';
 import { ES } from './i18n-es.js';
+import { composeComparison } from './image-composer.js';
 
 // Phase D.3: Haversine distance km giữa 2 GPS points
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -660,6 +661,25 @@ export async function handleImageSubmission({
     logger.warn({ err: err.message, submissionId: sub.id }, 'Failed to create primary SubmissionImage row');
   }
 
+  // Side-by-side compare image: chỉ gửi khi START + ảnh KHÔNG ĐẠT chuẩn,
+  // để promotor thấy trực quan template vs ảnh mình → sửa nhanh hơn.
+  let mediaPath = null;
+  if (parsed.type === 'campaign_start' && !evaluation.meets_standard) {
+    try {
+      const filename = `compare_${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
+      const outPath = join(config.uploadDir, filename);
+      await composeComparison({
+        templatePath: campaign.templateImagePath,
+        userPath: imagePath,
+        outputPath: outPath,
+      });
+      mediaPath = outPath;
+      logger.info({ submissionId: sub.id, mediaPath }, 'compose comparison ok');
+    } catch (err) {
+      logger.warn({ err: err.message, submissionId: sub.id }, 'compose comparison failed — text only');
+    }
+  }
+
   if (parsed.type === 'campaign_end') {
     const startSub = await findTodayStartSubmission(campaign.id);
     // ⭐ Local midnight (timezone của OS bot) — không dùng UTC vì user ở Lima (UTC-5)
@@ -676,7 +696,7 @@ export async function handleImageSubmission({
     });
   }
 
-  return { reply: userMessage, submission: sub };
+  return { reply: userMessage, submission: sub, mediaPath };
 }
 
 function formatStartReply(campaign, ev) {
