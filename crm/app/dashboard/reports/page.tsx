@@ -33,10 +33,17 @@ import { FileSpreadsheet, BarChart3, Download, Send, Map as MapIcon, Clock } fro
 import { sendDigestNowAction } from '@/lib/actions/notification';
 import { channelStatus } from '@/lib/notify/dispatcher';
 import { SubmissionsHeatmap } from '@/components/submissions-heatmap';
+import { HeatmapFilters } from '@/components/heatmap-filters';
 
 export const dynamic = 'force-dynamic';
 
-type SearchParams = Promise<{ days?: string }>;
+type SearchParams = Promise<{
+  days?: string;
+  campaign?: string;
+  type?: string;
+}>;
+
+const VALID_TYPES = ['campaign_start', 'campaign_end'] as const;
 
 // ⭐ Local date YYYY-MM-DD (timezone của OS server) — không dùng UTC để tránh
 // submissions cuối ngày Lima (UTC-5) bị nhảy sang ngày kế.
@@ -63,6 +70,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   const params = await searchParams;
   const days = parseInt(params.days || '30', 10);
   const range = [7, 30].includes(days) ? days : 30;
+  const selectedCampaign = (params.campaign || '').trim();
+  const selectedType =
+    params.type && (VALID_TYPES as readonly string[]).includes(params.type)
+      ? params.type
+      : '';
 
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - range + 1);
@@ -201,42 +213,56 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   ]);
   const anyChannelReady = channels.telegram || channels.email;
 
-  // Phase C.2: GPS heatmap — aggregate submissions theo cluster grid 0.005° (~500m)
+  // Phase C.2: GPS heatmap — cluster theo (lat, lng, campaign_code) grid 0.005° (~500m)
+  // Mỗi campaign 1 màu, dropdown filter campaign + submission type.
   const gpsSubmissions = await prisma.submission.findMany({
     where: {
       ...subScope,
       submittedAt: { gte: fromDate },
       gpsLatitude: { not: null },
       gpsLongitude: { not: null },
+      ...(selectedCampaign ? { campaign: { code: selectedCampaign } } : {}),
+      ...(selectedType ? { submissionType: selectedType } : {}),
     },
     select: {
       gpsLatitude: true,
       gpsLongitude: true,
-      campaign: { select: { code: true } },
+      campaign: { select: { code: true, name: true } },
     },
   });
-  const clusterMap = new Map<string, { lat: number; lng: number; count: number; sample: string }>();
+  const clusterMap = new Map<
+    string,
+    { lat: number; lng: number; count: number; code: string; name: string }
+  >();
   const GRID = 0.005;
   for (const s of gpsSubmissions) {
     if (s.gpsLatitude == null || s.gpsLongitude == null) continue;
     const gridLat = Math.round(s.gpsLatitude / GRID) * GRID;
     const gridLng = Math.round(s.gpsLongitude / GRID) * GRID;
-    const key = `${gridLat.toFixed(3)}_${gridLng.toFixed(3)}`;
+    const code = s.campaign?.code || '';
+    const name = s.campaign?.name || '';
+    const key = `${gridLat.toFixed(3)}_${gridLng.toFixed(3)}_${code}`;
     const cur = clusterMap.get(key);
     if (cur) {
       cur.count += 1;
     } else {
-      clusterMap.set(key, {
-        lat: gridLat,
-        lng: gridLng,
-        count: 1,
-        sample: s.campaign?.code || '',
-      });
+      clusterMap.set(key, { lat: gridLat, lng: gridLng, count: 1, code, name });
     }
   }
   const heatmapPoints = Array.from(clusterMap.values())
     .sort((a, b) => b.count - a.count)
     .slice(0, 100);
+  const distinctCampaignCount = new Set(heatmapPoints.map((p) => p.code).filter(Boolean)).size;
+
+  // Active campaigns for filter dropdown (admin sees all; branch_manager scope handled by server WHERE)
+  const heatmapCampaigns = await prisma.campaign.findMany({
+    where:
+      role === 'branch_manager' && session.user.branchId
+        ? { branchId: session.user.branchId }
+        : {},
+    select: { code: true, name: true },
+    orderBy: { code: 'asc' },
+  });
 
   // Phase C.4: SLA tracking — avg time from submittedAt → firstReviewedAt
   const reviewedSubs = await prisma.submission.findMany({
@@ -345,19 +371,32 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
         </Card>
       )}
 
-      {/* Phase C.2: GPS heatmap */}
+      {/* Phase C.2: GPS heatmap — color = campaign, filter by campaign + type */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <MapIcon className="h-4 w-4" />
-            GPS Heatmap — Phân bố submissions ({range} ngày)
-          </CardTitle>
-          <CardDescription className="text-xs">
-            {gpsSubmissions.length} submissions có GPS, gom thành {heatmapPoints.length} clusters (~500m). Color = density.
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <MapIcon className="h-4 w-4" />
+                GPS Heatmap — Phân bố submissions ({range} ngày)
+              </CardTitle>
+              <CardDescription className="text-xs mt-1">
+                {gpsSubmissions.length} submissions • {distinctCampaignCount} campaign(s) • {heatmapPoints.length} clusters (~500m). Color = campaign.
+              </CardDescription>
+            </div>
+            <HeatmapFilters
+              campaigns={heatmapCampaigns}
+              selectedCampaign={selectedCampaign}
+              selectedType={selectedType}
+            />
+          </div>
         </CardHeader>
         <CardContent>
-          <SubmissionsHeatmap points={heatmapPoints} height={400} />
+          <SubmissionsHeatmap
+            points={heatmapPoints}
+            height={400}
+            selectedCampaign={selectedCampaign || null}
+          />
         </CardContent>
       </Card>
 
