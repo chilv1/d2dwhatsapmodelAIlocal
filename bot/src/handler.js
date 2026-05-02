@@ -719,18 +719,10 @@ export async function handleTextMessage(text) {
     return lines.join('\n');
   }
 
-  // User gõ keyword (CAMPAIGN/END/INICIO/FIN/...) dưới dạng TEXT (không kèm ảnh) → hướng dẫn
+  // User gõ keyword (CAMPAIGN/END/INICIO/FIN/...) dưới dạng TEXT (không kèm ảnh)
+  // → trả về full HELP để promotor thấy ngay tất cả campaigns + cú pháp đúng.
   if (HINT_RE.test(raw)) {
-    // Pick first keyword từ campaign đầu tiên đang chạy (nếu có) để hint chính xác
-    const campaigns = await listActiveCampaigns(1);
-    const c = campaigns[0];
-    const kwStart = c
-      ? getKeywords(c.startKeywords, DEFAULT_START_KEYWORDS)[0]
-      : DEFAULT_START_KEYWORDS[0];
-    const kwEnd = c
-      ? getKeywords(c.endKeywords, DEFAULT_END_KEYWORDS)[0]
-      : DEFAULT_END_KEYWORDS[0];
-    return ES.TEXT_WITHOUT_IMAGE(kwStart, kwEnd);
+    return await buildHelpText();
   }
 
   return null;

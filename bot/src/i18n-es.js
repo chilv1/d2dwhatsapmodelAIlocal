@@ -79,18 +79,6 @@ export const ES = {
   STATUS_LINE: (code, name, target) =>
     `• ${code} — ${name} (meta ${target}/día)`,
 
-  // Text-without-image hint
-  TEXT_WITHOUT_IMAGE: (kwStart, kwEnd) =>
-    '⚠️ *¡Falta la imagen!*\n\n' +
-    'Acabas de escribir un comando como texto.\n' +
-    'El sistema requiere que envíes *junto con la imagen*:\n\n' +
-    '1. Toca 📎 (adjuntar) → selecciona imagen\n' +
-    '2. *Antes de enviar*, escribe el caption debajo:\n' +
-    `   \`${kwStart} <código>\` (inicio del día)\n` +
-    `   \`${kwEnd} <código> SUBS=<número>\` (fin del día)\n` +
-    '3. Envía.\n\n' +
-    'El caption debe estar *en el mismo mensaje que la imagen*, no como mensaje separado.',
-
   // End-of-day summaries (vision.js)
   END_OK: (name, x, y, pct, score) =>
     `✅ ¡Campaña *${name}* CUMPLIÓ la meta hoy!\n` +
