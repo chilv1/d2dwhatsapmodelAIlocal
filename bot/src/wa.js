@@ -20,6 +20,7 @@ import {
   saveMediaBuffer,
   handleTextMessage,
 } from './handler.js';
+import { ES } from './i18n-es.js';
 
 let client;
 // Track xem QR đã gửi qua Telegram session này chưa — tránh spam (QR refresh mỗi ~60s)
@@ -216,14 +217,14 @@ async function handleIncomingImage(msg, chat, senderNumber, senderName) {
     await sendReply(
       chat,
       msg,
-      'Không tải được ảnh từ WhatsApp, vui lòng gửi lại.',
+      ES.MEDIA_DOWNLOAD_FAIL,
       senderNumber,
     );
     return;
   }
 
   if (!media || !media.data) {
-    await sendReply(chat, msg, 'Ảnh trống, gửi lại nhé.', senderNumber);
+    await sendReply(chat, msg, ES.MEDIA_EMPTY, senderNumber);
     return;
   }
 

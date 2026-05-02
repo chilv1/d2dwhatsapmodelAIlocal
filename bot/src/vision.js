@@ -7,6 +7,7 @@ import { extname } from 'node:path';
 import OpenAI from 'openai';
 import { config } from './config.js';
 import { getSetting } from './settings.js';
+import { ES } from './i18n-es.js';
 
 /**
  * Resolve model: DB setting `vision.model` > env OPENAI_VISION_MODEL > 'gpt-4o' default.
@@ -529,28 +530,39 @@ export async function evaluateEndOfDayReport({
     ? (reportedSubscribers / targetSubscribers) * 100
     : 0;
 
+  const pctFixed = percent.toFixed(0);
   let summary;
   if (achieved && evaluation.meets_standard) {
-    summary =
-      `✅ Campaign *${campaignName}* ĐẠT mục tiêu hôm nay!\n` +
-      `Thuê bao: ${reportedSubscribers}/${targetSubscribers} (${percent.toFixed(0)}%)\n` +
-      `Ảnh đạt chuẩn (${evaluation.similarity_score}/100). ¡Buen trabajo!`;
+    summary = ES.END_OK(
+      campaignName,
+      reportedSubscribers,
+      targetSubscribers,
+      pctFixed,
+      evaluation.similarity_score,
+    );
   } else if (achieved && !evaluation.meets_standard) {
-    summary =
-      `⚠️ Số thuê bao ĐẠT (${reportedSubscribers}/${targetSubscribers}) nhưng ẢNH chưa đạt chuẩn (${evaluation.similarity_score}/100).\n` +
-      `Vấn đề: ${(evaluation.issues || []).slice(0, 2).join('; ') || 'xem feedback'}\n` +
-      `Cần gửi lại ảnh đạt chuẩn để hoàn tất báo cáo.`;
+    const issues =
+      (evaluation.issues || []).slice(0, 2).join('; ') || 'ver retroalimentación';
+    summary = ES.END_SUBS_OK_IMG_NO(
+      reportedSubscribers,
+      targetSubscribers,
+      evaluation.similarity_score,
+      issues,
+    );
   } else if (!achieved && evaluation.meets_standard) {
-    summary =
-      `⚠️ Ảnh đạt chuẩn nhưng số thuê bao CHƯA ĐẠT mục tiêu.\n` +
-      `Thuê bao: ${reportedSubscribers}/${targetSubscribers} (${percent.toFixed(0)}%)\n` +
-      `Cần báo cáo lý do và kế hoạch khắc phục cho ngày mai.`;
+    summary = ES.END_IMG_OK_SUBS_NO(
+      reportedSubscribers,
+      targetSubscribers,
+      pctFixed,
+    );
   } else {
-    summary =
-      `❌ Campaign ${campaignName} CHƯA ĐẠT cả 2 tiêu chí.\n` +
-      `Thuê bao: ${reportedSubscribers}/${targetSubscribers} (${percent.toFixed(0)}%)\n` +
-      `Ảnh: ${evaluation.similarity_score}/100\n` +
-      `Cần xem xét lại và báo cáo chi tiết.`;
+    summary = ES.END_NEITHER(
+      campaignName,
+      reportedSubscribers,
+      targetSubscribers,
+      pctFixed,
+      evaluation.similarity_score,
+    );
   }
 
   return { evaluation, summary };

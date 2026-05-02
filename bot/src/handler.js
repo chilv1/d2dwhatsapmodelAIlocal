@@ -32,6 +32,7 @@ import {
 import { checkImageQuality } from './image-quality.js';
 import { prisma } from './db.js';
 import { notifyAdmins } from './telegram.js';
+import { ES } from './i18n-es.js';
 
 // Phase D.3: Haversine distance km giữa 2 GPS points
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -109,8 +110,7 @@ function getKeywords(jsonStr, fallback) {
 export async function parseCaption(caption) {
   if (!caption || !caption.trim()) {
     return {
-      error:
-        'Caption trống. Gõ HELP để xem keywords và cú pháp cho từng campaign.',
+      error: ES.EMPTY_CAPTION,
     };
   }
 
@@ -148,8 +148,7 @@ export async function parseCaption(caption) {
   }
 
   return {
-    error:
-      'Không nhận diện được cú pháp hoặc campaign. Gõ HELP để xem keywords cho từng campaign đang chạy.',
+    error: ES.PARSE_ERROR,
   };
 }
 
@@ -158,24 +157,24 @@ export async function parseCaption(caption) {
  */
 async function buildHelpText() {
   const campaigns = await listActiveCampaigns(20);
-  const lines = ['📋 *Hướng dẫn — Telecom Big Campaign Bot*\n'];
+  const lines = [ES.HELP_HEADER];
 
   if (campaigns.length === 0) {
-    lines.push('Hiện chưa có campaign nào đang hoạt động.');
+    lines.push(ES.HELP_NO_CAMPAIGNS);
   } else {
-    lines.push('*Campaigns đang chạy + keywords:*\n');
+    lines.push(ES.HELP_CAMPAIGNS_LABEL);
     for (const c of campaigns) {
       const startKeys = getKeywords(c.startKeywords, DEFAULT_START_KEYWORDS).join(' / ');
       const endKeys = getKeywords(c.endKeywords, DEFAULT_END_KEYWORDS).join(' / ');
       lines.push(`• \`${c.code}\` — ${c.name}`);
-      lines.push(`  Đầu ngày: \`${startKeys} ${c.code}\``);
-      lines.push(`  Cuối ngày: \`${endKeys} ${c.code} SUBS=<số>\``);
+      lines.push(`  ${ES.HELP_START}: \`${startKeys} ${c.code}\``);
+      lines.push(`  ${ES.HELP_END}: \`${endKeys} ${c.code} SUBS=<número>\``);
       lines.push('');
     }
   }
 
-  lines.push('_Caption phải gửi KÈM ảnh, không phải tin text riêng._');
-  lines.push('Gõ STATUS để xem campaign đang chạy.');
+  lines.push(ES.HELP_FOOTER_NOTE);
+  lines.push(ES.HELP_FOOTER_STATUS);
   return lines.join('\n');
 }
 
@@ -286,7 +285,7 @@ export async function handleImageSubmission({
     if (existing) {
       logger.info({ waMessageId }, 'Duplicate message, skipping');
       return {
-        reply: 'Tin nhắn đã được xử lý trước đó.',
+        reply: ES.DUPLICATE_PROCESSED,
         submission: existing,
       };
     }
@@ -313,12 +312,12 @@ export async function handleImageSubmission({
         waSenderName,
       }),
       evaluationResult: 'needs_review',
-      aiFeedback: `❌ Ảnh không đạt chuẩn quality: ${quality.reason}. Vui lòng chụp lại với ánh sáng/độ nét tốt hơn.`,
+      aiFeedback: ES.QUALITY_FAIL_FEEDBACK(quality.reason),
       qualityFailed: true,
       qualityFailReason: quality.reason,
     });
     return {
-      reply: `⚠️ Ảnh không đạt chuẩn (${quality.reason}). Vui lòng chụp lại.`,
+      reply: ES.QUALITY_FAIL_REPLY(quality.reason),
       submission: sub,
     };
   }
@@ -343,7 +342,7 @@ export async function handleImageSubmission({
         // Refresh window
         markActiveSubmission(waSenderNumber, activeId);
         return {
-          reply: `📎 Đã thêm ảnh #${order + 1} vào submission #${activeId}.`,
+          reply: ES.MULTI_IMAGE_ATTACHED(order + 1, activeId),
           submission: { id: activeId },
         };
       } catch (err) {
@@ -379,7 +378,7 @@ export async function handleImageSubmission({
 
   const campaign = await findActiveCampaignByCode(parsed.code);
   if (!campaign) {
-    const msg = `Không tìm thấy campaign mã *${parsed.code}* đang hoạt động. Liên hệ admin để xác nhận.`;
+    const msg = ES.CAMPAIGN_NOT_FOUND(parsed.code);
     const sub = await insertSubmission({
       ...buildBaseSubmission({
         leaderId: leader.id,
@@ -405,7 +404,7 @@ export async function handleImageSubmission({
   // Throttle: cùng sender + cùng campaign trong 5s → reject (anti accidental double-tap)
   const throttleEnabled = (await getSetting('submission.throttle_enabled', '0')) === '1';
   if (throttleEnabled && waSenderNumber && (await isThrottled({ senderNumber: waSenderNumber, campaignId: campaign.id }))) {
-    const msg = `⏳ Đã nhận submission cho *${campaign.code}* gần đây. Đợi 1 chút rồi gửi lại.`;
+    const msg = ES.THROTTLED(campaign.code);
     logger.info({ sender: waSenderNumber, campaign: campaign.code }, 'Throttled duplicate submission');
     recordMetric('throttled');
     return { reply: msg, submission: null };
@@ -415,7 +414,7 @@ export async function handleImageSubmission({
     !campaign.templateImagePath ||
     !existsSync(campaign.templateImagePath)
   ) {
-    const msg = `Campaign *${campaign.code}* chưa có ảnh template. Liên hệ admin upload template trước.`;
+    const msg = ES.NO_TEMPLATE(campaign.code);
     const sub = await insertSubmission({
       ...buildBaseSubmission({
         leaderId: leader.id,
@@ -505,8 +504,22 @@ export async function handleImageSubmission({
         evaluation = cachedEval;
         const achieved = parsed.subs >= campaign.targetSubscribers;
         const pct = campaign.targetSubscribers ? (parsed.subs / campaign.targetSubscribers) * 100 : 0;
-        const status = achieved && evaluation.meets_standard ? 'ĐẠT cả 2' : achieved ? 'subs ĐẠT, ảnh chưa đạt' : evaluation.meets_standard ? 'ảnh đạt, subs CHƯA' : 'CHƯA ĐẠT cả 2';
-        userMessage = `Campaign ${campaign.code}: ${parsed.subs}/${campaign.targetSubscribers} subs (${pct.toFixed(0)}%) | ảnh ${evaluation.similarity_score}/100 | ${status}\n\n${evaluation.feedback_for_user || ''}`;
+        const status = achieved && evaluation.meets_standard
+          ? ES.STATUS_BOTH_OK
+          : achieved
+            ? ES.STATUS_SUBS_OK_IMG_NO
+            : evaluation.meets_standard
+              ? ES.STATUS_IMG_OK_SUBS_NO
+              : ES.STATUS_NEITHER;
+        userMessage = ES.END_SUMMARY_TEMPLATE(
+          campaign.code,
+          parsed.subs,
+          campaign.targetSubscribers,
+          pct.toFixed(0),
+          evaluation.similarity_score,
+          status,
+          evaluation.feedback_for_user || '',
+        );
       } else {
         endResult = await evaluateEndOfDayReport({
           endImagePath: imagePath,
@@ -532,7 +545,7 @@ export async function handleImageSubmission({
     }
   } catch (err) {
     logger.error({ err: err.message }, 'OpenAI vision call failed');
-    const msg = `Lỗi đánh giá AI: ${err.message}. Sẽ thử lại.`;
+    const msg = ES.AI_ERROR(err.message);
     const sub = await insertSubmission({
       ...buildBaseSubmission({
         leaderId: leader.id,
@@ -595,7 +608,7 @@ export async function handleImageSubmission({
             'Submission FUERA-DE-ZONA — routed to needs_review',
           );
           // Append warning vào feedback
-          evaluation.feedback_for_user = `⚠️ GPS xa branch HQ ${outOfZoneKm} km (max ${branch.gpsRadiusKm} km). ${evaluation.feedback_for_user || ''}`;
+          evaluation.feedback_for_user = `${ES.OUT_OF_ZONE(outOfZoneKm, branch.gpsRadiusKm)} ${evaluation.feedback_for_user || ''}`;
         }
       }
     } catch (err) {
@@ -667,18 +680,22 @@ export async function handleImageSubmission({
 
 function formatStartReply(campaign, ev) {
   if (ev.meets_standard) {
-    return (
-      `✅ Ảnh đầu ngày campaign *${campaign.name}* ĐẠT chuẩn (${ev.similarity_score}/100).\n` +
-      `${ev.feedback_for_user}\n\n` +
-      `Mục tiêu hôm nay: ${campaign.targetSubscribers} thuê bao. ¡Éxito!`
+    return ES.START_REPLY_OK(
+      campaign.name,
+      ev.similarity_score,
+      ev.feedback_for_user,
+      campaign.targetSubscribers,
     );
   }
   const issues = (ev.issues || []).slice(0, 3).map((i) => `• ${i}`).join('\n');
-  return (
-    `⚠️ Ảnh đầu ngày campaign *${campaign.name}* CHƯA ĐẠT chuẩn (${ev.similarity_score}/100).\n` +
-    `Vấn đề:\n${issues || '(không có)'}\n\n` +
-    `${ev.feedback_for_user}\n\n` +
-    `Vui lòng chỉnh sửa và gửi lại với caption: CAMPAIGN ${campaign.code}`
+  const firstStartKw = getKeywords(campaign.startKeywords, DEFAULT_START_KEYWORDS)[0];
+  return ES.START_REPLY_FAIL(
+    campaign.name,
+    ev.similarity_score,
+    issues,
+    ev.feedback_for_user,
+    firstStartKw,
+    campaign.code,
   );
 }
 
@@ -693,27 +710,26 @@ export async function handleTextMessage(text) {
   if (t === 'HELP' || t === '?' || t === '/HELP') return await buildHelpText();
   if (t === 'STATUS') {
     const rows = await listActiveCampaigns(10);
-    if (rows.length === 0) return 'Hiện chưa có campaign nào đang hoạt động.';
-    const lines = ['📊 *Campaign đang hoạt động:*', ''];
+    if (rows.length === 0) return ES.STATUS_NO_CAMPAIGNS;
+    const lines = [ES.STATUS_HEADER, ''];
     for (const c of rows) {
-      lines.push(`• ${c.code} — ${c.name} (target ${c.targetSubscribers}/ngày)`);
+      lines.push(ES.STATUS_LINE(c.code, c.name, c.targetSubscribers));
     }
     return lines.join('\n');
   }
 
   // User gõ keyword (CAMPAIGN/END/INICIO/FIN/...) dưới dạng TEXT (không kèm ảnh) → hướng dẫn
   if (HINT_RE.test(raw)) {
-    return (
-      '⚠️ *Thiếu ảnh!*\n\n' +
-      'Bạn vừa gõ lệnh CAMPAIGN/END dưới dạng text.\n' +
-      'Hệ thống yêu cầu phải *kèm ảnh*:\n\n' +
-      '1. Bấm 📎 (đính kèm) → chọn ảnh\n' +
-      '2. *Trước khi gửi*, gõ caption ngay dưới ảnh:\n' +
-      '   `CAMPAIGN <mã>` (đầu ngày)\n' +
-      '   `END <mã> SUBS=<số>` (cuối ngày)\n' +
-      '3. Bấm gửi.\n\n' +
-      'Caption phải nằm *cùng tin với ảnh*, không phải tin riêng.'
-    );
+    // Pick first keyword từ campaign đầu tiên đang chạy (nếu có) để hint chính xác
+    const campaigns = await listActiveCampaigns(1);
+    const c = campaigns[0];
+    const kwStart = c
+      ? getKeywords(c.startKeywords, DEFAULT_START_KEYWORDS)[0]
+      : DEFAULT_START_KEYWORDS[0];
+    const kwEnd = c
+      ? getKeywords(c.endKeywords, DEFAULT_END_KEYWORDS)[0]
+      : DEFAULT_END_KEYWORDS[0];
+    return ES.TEXT_WITHOUT_IMAGE(kwStart, kwEnd);
   }
 
   return null;
