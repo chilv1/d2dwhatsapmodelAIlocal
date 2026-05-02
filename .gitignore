@@ -1,9 +1,16 @@
+# ── Dependencies + lockfiles per workspace ──
 node_modules/
+
+# ── Secrets ──
 .env
 .env.local
 .env.*.local
+
+# ── OS ──
 .DS_Store
 *.log
+
+# ── Bot data: ảnh upload + WhatsApp session + cache ──
 data/uploads/*
 data/templates/*
 data/wa-session/
@@ -13,12 +20,24 @@ data/*.db-shm
 data/*.db-wal
 data/qr.png
 data/*.png
+data/backups/
+data/screenshots/
 !data/uploads/.gitkeep
 !data/templates/.gitkeep
+
+# ── whatsapp-web.js Puppeteer ──
+.wwebjs_cache/
+.wwebjs_auth/
+
+# ── Next.js build artifacts ──
+crm/.next/
+crm/out/
+crm/next-env.d.ts
+
+# ── IDE + tooling ──
 .vscode/
 .idea/
 .claude/
-.wwebjs_cache/
-.wwebjs_auth/
-_archive_python/
 
+# ── Project archives ──
+_archive_python/

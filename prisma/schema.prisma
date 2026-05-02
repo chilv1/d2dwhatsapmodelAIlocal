@@ -1,0 +1,235 @@
+// Telecom Big Campaign Bot — Prisma schema
+// SOURCE OF TRUTH cho tất cả entity của hệ thống
+// Cả bot/ và crm/ đều generate Prisma client từ schema này
+//
+// Convention:
+//   model = PascalCase, field = camelCase, table/column = snake_case (giữ tương thích DB cũ)
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  region    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  teamLeaders            TeamLeader[]
+  campaigns              Campaign[]
+  promotors              Promotor[]
+  users                  User[]
+  notificationRecipients NotificationRecipient[]
+
+  @@map("branches")
+}
+
+model TeamLeader {
+  id              Int      @id @default(autoincrement())
+  name            String
+  whatsappNumber  String   @unique @map("whatsapp_number")
+  branchId        Int?     @map("branch_id")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  branch      Branch?      @relation(fields: [branchId], references: [id])
+  submissions Submission[]
+
+  @@map("team_leaders")
+}
+
+model Campaign {
+  id                    Int       @id @default(autoincrement())
+  code                  String    @unique
+  name                  String
+  description           String?
+  templateImagePath     String?   @map("template_image_path")
+  templateRequirements  String?   @map("template_requirements")
+  targetSubscribers     Int       @default(20) @map("target_subscribers")
+  branchId              Int?      @map("branch_id")
+  startDate             DateTime? @map("start_date")
+  endDate               DateTime? @map("end_date")
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+
+  // M5: alert config (giá trị mặc định cho M1, sẽ enable ở M6)
+  alertThreshold        Int       @default(50) @map("alert_threshold")
+  slackWebhookUrl       String?   @map("slack_webhook_url")
+
+  branch       Branch?       @relation(fields: [branchId], references: [id])
+  submissions  Submission[]
+  dailyReports DailyReport[]
+
+  @@map("campaigns")
+}
+
+// M5: nhân viên thực địa
+model Promotor {
+  id           Int      @id @default(autoincrement())
+  name         String
+  employeeCode String   @unique @map("employee_code")
+  branchId     Int?     @map("branch_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  joinedAt     DateTime @default(now()) @map("joined_at")
+
+  branch      Branch?      @relation(fields: [branchId], references: [id])
+  submissions Submission[]
+
+  @@map("promotors")
+}
+
+model Submission {
+  id                    Int       @id @default(autoincrement())
+  teamLeaderId          Int?      @map("team_leader_id")
+  campaignId            Int?      @map("campaign_id")
+  promotorId            Int?      @map("promotor_id")          // M5
+  submissionType        String    @map("submission_type")       // 'campaign_start' | 'campaign_end'
+  imagePath             String    @map("image_path")
+  caption               String?
+  gpsLatitude           Float?    @map("gps_latitude")
+  gpsLongitude          Float?    @map("gps_longitude")
+  gpsAddress            String?   @map("gps_address")
+  submittedAt           DateTime  @default(now()) @map("submitted_at")
+  evaluationResult      String    @default("pending") @map("evaluation_result") // pending|approved|rejected|needs_review
+  similarityScore       Int?      @map("similarity_score")
+  meetsStandard         Int?      @map("meets_standard")        // SQLite không có boolean native → giữ Int 0/1
+  aiFeedback            String?   @map("ai_feedback")
+  aiRawResponse         String?   @map("ai_raw_response")
+  reportedSubscribers   Int?      @map("reported_subscribers")
+  waMessageId           String?   @unique @map("wa_message_id")
+  waChatId              String?   @map("wa_chat_id")
+  waSenderNumber        String?   @map("wa_sender_number")
+  waSenderName          String?   @map("wa_sender_name")
+
+  // M4: manual override
+  manualOverride        String?   @map("manual_override")       // 'approved' | 'rejected' | null
+  overrideUserId        Int?      @map("override_user_id")
+  overrideReason        String?   @map("override_reason")
+  overriddenAt          DateTime? @map("overridden_at")
+
+  teamLeader        TeamLeader?   @relation(fields: [teamLeaderId], references: [id])
+  campaign          Campaign?     @relation(fields: [campaignId], references: [id])
+  promotor          Promotor?     @relation(fields: [promotorId], references: [id])
+  overrideUser      User?         @relation("submissionOverrides", fields: [overrideUserId], references: [id])
+  startOfDayReports DailyReport[] @relation("StartSubmission")
+  endOfDayReports   DailyReport[] @relation("EndSubmission")
+
+  @@index([campaignId, submittedAt])
+  @@map("submissions")
+}
+
+model DailyReport {
+  id                  Int      @id @default(autoincrement())
+  campaignId          Int?     @map("campaign_id")
+  reportDate          DateTime @map("report_date")
+  actualSubscribers   Int      @default(0) @map("actual_subscribers")
+  targetSubscribers   Int      @default(20) @map("target_subscribers")
+  achieved            Boolean  @default(false)
+  achievementPercent  Float?   @map("achievement_percent")
+  startSubmissionId   Int?     @map("start_submission_id")
+  endSubmissionId     Int?     @map("end_submission_id")
+  summary             String?
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  campaign        Campaign?    @relation(fields: [campaignId], references: [id])
+  startSubmission Submission?  @relation("StartSubmission", fields: [startSubmissionId], references: [id])
+  endSubmission   Submission?  @relation("EndSubmission", fields: [endSubmissionId], references: [id])
+
+  @@unique([campaignId, reportDate], name: "uq_campaign_date")
+  @@map("daily_reports")
+}
+
+// ─────────────────── M2+: Users + RBAC ───────────────────
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         String   @default("viewer")   // 'admin' | 'branch_manager' | 'viewer'
+  branchId     Int?     @map("branch_id")     // chỉ branch_manager bị bind chi nhánh
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  branch              Branch?      @relation(fields: [branchId], references: [id])
+  auditLogs           AuditLog[]
+  submissionOverrides Submission[] @relation("submissionOverrides")
+  notificationLogs    NotificationLog[]
+
+  @@map("users")
+}
+
+// M4: audit mọi action quan trọng
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String   // 'campaign.create', 'submission.override', 'user.login', ...
+  entityType String?  @map("entity_type")  // 'campaign', 'submission', 'user'
+  entityId   Int?     @map("entity_id")
+  oldValue   String?  @map("old_value")    // JSON
+  newValue   String?  @map("new_value")    // JSON
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// M6: notification history
+model NotificationLog {
+  id        Int      @id @default(autoincrement())
+  channel   String   // 'telegram' | 'email'
+  recipient String
+  subject   String?
+  body      String
+  status    String   @default("pending")   // 'pending' | 'sent' | 'failed'
+  errorMsg  String?  @map("error_msg")
+  sentAt    DateTime? @map("sent_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  triggeredByUserId Int? @map("triggered_by_user_id")
+
+  triggeredBy User? @relation(fields: [triggeredByUserId], references: [id])
+
+  @@index([channel, createdAt])
+  @@map("notification_logs")
+}
+
+// M6+: app settings key-value (cho config Telegram/SMTP từ UI)
+model Setting {
+  key       String   @id
+  value     String?
+  isSecret  Boolean  @default(false) @map("is_secret")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// M6: subscribers nhận notification (per channel + per branch optional)
+model NotificationRecipient {
+  id          Int      @id @default(autoincrement())
+  channel     String   // 'telegram' | 'email'
+  address     String   // email "x@y.com" hoặc Telegram chat_id "-100123..." hoặc "@username"
+  label       String?  // tên hiển thị (vd: "Ban giám đốc Lima")
+  branchId    Int?     @map("branch_id")    // null = nhận tất cả; có ID = chỉ branch đó
+  digestDaily Boolean  @default(true) @map("digest_daily")    // có nhận daily digest không
+  alertReject Boolean  @default(true) @map("alert_reject")    // có nhận realtime alert không
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@unique([channel, address, branchId])
+  @@index([channel, isActive])
+  @@map("notification_recipients")
+}

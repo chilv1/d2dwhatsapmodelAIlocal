@@ -1,26 +1,28 @@
 {
-  "name": "telecombig-campaign-bot",
+  "name": "telecombig-monorepo",
   "version": "1.0.0",
-  "description": "WhatsApp + OpenAI vision bot to evaluate campaign images for Telecom Big Peru",
-  "type": "module",
-  "main": "index.js",
+  "description": "Telecom Big Peru — Campaign Bot (WhatsApp+OpenAI) + CRM (Next.js)",
+  "private": true,
+  "workspaces": [
+    "bot",
+    "crm"
+  ],
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
-    "seed": "node src/seed.js",
-    "test:vision": "node src/scripts/test-vision.js"
+    "bot:start": "npm --workspace=bot start",
+    "bot:dev": "npm --workspace=bot run dev",
+    "bot:seed": "node bot/src/seed.js",
+    "bot:test:vision": "npm --workspace=bot run test:vision",
+    "crm:dev": "npm --workspace=crm run dev",
+    "crm:build": "npm --workspace=crm run build",
+    "crm:start": "npm --workspace=crm start",
+    "crm:seed": "node crm/scripts/seed-admin.mjs",
+    "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema=./prisma/schema.prisma",
+    "prisma:reset": "prisma migrate reset --schema=./prisma/schema.prisma --force --skip-seed"
   },
-  "dependencies": {
-    "better-sqlite3": "^11.7.0",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1",
-    "openai": "^4.77.0",
-    "pino": "^9.5.0",
-    "pino-pretty": "^13.0.0",
-    "qrcode": "^1.5.4",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.27.0"
+  "devDependencies": {
+    "prisma": "^6.19.3"
   },
   "engines": {
     "node": ">=20"
