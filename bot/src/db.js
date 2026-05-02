@@ -123,7 +123,13 @@ export async function upsertDailyReport({
 export async function listActiveCampaigns(limit = 10) {
   return prisma.campaign.findMany({
     where: { isActive: true },
-    select: { code: true, name: true, targetSubscribers: true },
+    select: {
+      code: true,
+      name: true,
+      targetSubscribers: true,
+      startKeywords: true,
+      endKeywords: true,
+    },
     take: limit,
     orderBy: { id: 'asc' },
   });

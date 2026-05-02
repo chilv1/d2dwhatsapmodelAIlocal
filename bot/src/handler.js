@@ -75,46 +75,108 @@ setInterval(() => {
   }
 }, 60_000).unref();
 
-const CAMPAIGN_RE = /CAMPAIGN\s+(\S+)/i;
-const END_RE = /END\s+(\S+).*?SUBS\s*=\s*(\d+)/is;
+// Default keywords (fallback nếu campaign không cấu hình riêng)
+const DEFAULT_START_KEYWORDS = ['CAMPAIGN'];
+const DEFAULT_END_KEYWORDS = ['END'];
 
-const HELP_TEXT =
-  '📋 *Hướng dẫn — Telecom Big Campaign Bot*\n\n' +
-  '1️⃣ *Đầu ngày*: gửi ảnh điểm bán + caption:\n' +
-  '   `CAMPAIGN <mã_campaign>`\n' +
-  '   Ví dụ: CAMPAIGN PROMO_LIMA_001\n\n' +
-  '2️⃣ *Cuối ngày*: gửi ảnh + caption:\n' +
-  '   `END <mã_campaign> SUBS=<số_thuê_bao>`\n' +
-  '   Ví dụ: END PROMO_LIMA_001 SUBS=23\n\n' +
-  'AI sẽ đánh giá ảnh và trả lời ngay. Gõ STATUS để xem campaign đang chạy.';
+// Detection regex chỉ dùng cho text-without-image hint (handleTextMessage)
+// — không dùng cho parseCaption vì keywords giờ động per-campaign.
+const HINT_RE = /\b(CAMPAIGN|END|INICIO|FIN|BẮT ĐẦU|CIERRE)\b/i;
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getKeywords(jsonStr, fallback) {
+  if (!jsonStr) return fallback;
+  try {
+    const arr = JSON.parse(jsonStr);
+    if (!Array.isArray(arr) || arr.length === 0) return fallback;
+    const cleaned = arr
+      .map((s) => String(s || '').trim())
+      .filter((s) => s.length > 0 && s.length <= 30);
+    return cleaned.length > 0 ? cleaned : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /**
+ * Parse caption matching active campaigns + their dynamic keywords.
  * @param {string} caption
- * @returns {{type:'campaign_start'|'campaign_end', code:string, subs?:number} | {error:string}}
+ * @returns {Promise<{type:'campaign_start'|'campaign_end', code:string, subs?:number} | {error:string}>}
  */
-export function parseCaption(caption) {
+export async function parseCaption(caption) {
   if (!caption || !caption.trim()) {
     return {
       error:
-        'Caption trống. Cú pháp:\n  CAMPAIGN <mã>           (đầu ngày)\n  END <mã> SUBS=<số>      (cuối ngày)',
+        'Caption trống. Gõ HELP để xem keywords và cú pháp cho từng campaign.',
     };
   }
-  const endMatch = caption.match(END_RE);
-  if (endMatch) {
-    return {
-      type: 'campaign_end',
-      code: endMatch[1].toUpperCase(),
-      subs: parseInt(endMatch[2], 10),
-    };
+
+  const upper = caption.trim().toUpperCase();
+  const campaigns = await listActiveCampaigns(100);
+
+  for (const c of campaigns) {
+    const code = c.code.toUpperCase();
+    const codeEsc = escapeRegex(code);
+    const startKeys = getKeywords(c.startKeywords, DEFAULT_START_KEYWORDS);
+    const endKeys = getKeywords(c.endKeywords, DEFAULT_END_KEYWORDS);
+
+    // Match END trước (vì END thường chứa từ start như "campaign_end")
+    for (const kw of endKeys) {
+      const re = new RegExp(
+        `\\b${escapeRegex(kw.toUpperCase())}\\s+${codeEsc}\\b.*?SUBS\\s*=\\s*(\\d+)`,
+        'is',
+      );
+      const m = upper.match(re);
+      if (m) {
+        return { type: 'campaign_end', code, subs: parseInt(m[1], 10) };
+      }
+    }
+
+    // Match START
+    for (const kw of startKeys) {
+      const re = new RegExp(
+        `\\b${escapeRegex(kw.toUpperCase())}\\s+${codeEsc}\\b`,
+        'i',
+      );
+      if (re.test(upper)) {
+        return { type: 'campaign_start', code };
+      }
+    }
   }
-  const camMatch = caption.match(CAMPAIGN_RE);
-  if (camMatch) {
-    return { type: 'campaign_start', code: camMatch[1].toUpperCase() };
-  }
+
   return {
     error:
-      'Không nhận diện được cú pháp. Dùng:\n  CAMPAIGN <mã>           (đầu ngày)\n  END <mã> SUBS=<số>      (cuối ngày)',
+      'Không nhận diện được cú pháp hoặc campaign. Gõ HELP để xem keywords cho từng campaign đang chạy.',
   };
+}
+
+/**
+ * Build HELP message dynamic — list active campaigns + keywords.
+ */
+async function buildHelpText() {
+  const campaigns = await listActiveCampaigns(20);
+  const lines = ['📋 *Hướng dẫn — Telecom Big Campaign Bot*\n'];
+
+  if (campaigns.length === 0) {
+    lines.push('Hiện chưa có campaign nào đang hoạt động.');
+  } else {
+    lines.push('*Campaigns đang chạy + keywords:*\n');
+    for (const c of campaigns) {
+      const startKeys = getKeywords(c.startKeywords, DEFAULT_START_KEYWORDS).join(' / ');
+      const endKeys = getKeywords(c.endKeywords, DEFAULT_END_KEYWORDS).join(' / ');
+      lines.push(`• \`${c.code}\` — ${c.name}`);
+      lines.push(`  Đầu ngày: \`${startKeys} ${c.code}\``);
+      lines.push(`  Cuối ngày: \`${endKeys} ${c.code} SUBS=<số>\``);
+      lines.push('');
+    }
+  }
+
+  lines.push('_Caption phải gửi KÈM ảnh, không phải tin text riêng._');
+  lines.push('Gõ STATUS để xem campaign đang chạy.');
+  return lines.join('\n');
 }
 
 /**
@@ -292,7 +354,7 @@ export async function handleImageSubmission({
 
   const leader = await getOrCreateTeamLeader(waSenderNumber, waSenderName);
 
-  const parsed = parseCaption(caption || '');
+  const parsed = await parseCaption(caption || '');
   if (parsed.error) {
     const sub = await insertSubmission({
       ...buildBaseSubmission({
@@ -628,7 +690,7 @@ export async function handleTextMessage(text) {
   const raw = (text || '').trim();
   const t = raw.toUpperCase();
   if (!t) return null;
-  if (t === 'HELP' || t === '?' || t === '/HELP') return HELP_TEXT;
+  if (t === 'HELP' || t === '?' || t === '/HELP') return await buildHelpText();
   if (t === 'STATUS') {
     const rows = await listActiveCampaigns(10);
     if (rows.length === 0) return 'Hiện chưa có campaign nào đang hoạt động.';
@@ -639,8 +701,8 @@ export async function handleTextMessage(text) {
     return lines.join('\n');
   }
 
-  // User gõ CAMPAIGN/END dưới dạng TEXT (không kèm ảnh) → hướng dẫn
-  if (CAMPAIGN_RE.test(raw) || END_RE.test(raw)) {
+  // User gõ keyword (CAMPAIGN/END/INICIO/FIN/...) dưới dạng TEXT (không kèm ảnh) → hướng dẫn
+  if (HINT_RE.test(raw)) {
     return (
       '⚠️ *Thiếu ảnh!*\n\n' +
       'Bạn vừa gõ lệnh CAMPAIGN/END dưới dạng text.\n' +

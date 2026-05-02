@@ -57,6 +57,9 @@ model Campaign {
   templateImagePath     String?   @map("template_image_path")
   templateRequirements  String?   @map("template_requirements")
   requirementsJson      String?   @map("requirements_json")
+  // Per-campaign custom keywords (JSON arrays). NULL = fallback ["CAMPAIGN"] / ["END"].
+  startKeywords         String?   @map("start_keywords")
+  endKeywords           String?   @map("end_keywords")
   targetSubscribers     Int       @default(20) @map("target_subscribers")
   branchId              Int?      @map("branch_id")
   startDate             DateTime? @map("start_date")

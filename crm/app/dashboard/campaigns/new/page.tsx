@@ -119,6 +119,32 @@ export default async function NewCampaignPage() {
 
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
               <div className="space-y-2">
+                <Label htmlFor="start_keywords">Từ khoá đầu ngày (start)</Label>
+                <Input
+                  id="start_keywords"
+                  name="start_keywords"
+                  placeholder="CAMPAIGN, INICIO, BẮT ĐẦU"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Các từ phẩy phân cách. Bot match khi promotor gõ <code>{`<keyword>`} {`<mã>`}</code>.
+                  Để trống = default <code>CAMPAIGN</code>.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="end_keywords">Từ khoá cuối ngày (end)</Label>
+                <Input
+                  id="end_keywords"
+                  name="end_keywords"
+                  placeholder="END, FIN, CIERRE"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Vd <code>FIN MERCADO_01 SUBS=23</code>. Để trống = default <code>END</code>.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              <div className="space-y-2">
                 <Label htmlFor="target_subscribers">Mục tiêu thuê bao/ngày</Label>
                 <Input
                   id="target_subscribers"

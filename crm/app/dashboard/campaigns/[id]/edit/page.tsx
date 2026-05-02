@@ -21,6 +21,17 @@ export const dynamic = 'force-dynamic';
 
 type Params = Promise<{ id: string }>;
 
+// JSON keywords array → comma-separated string (cho input defaultValue)
+function keywordsToInput(jsonStr: string | null | undefined): string {
+  if (!jsonStr) return '';
+  try {
+    const arr = JSON.parse(jsonStr);
+    return Array.isArray(arr) ? arr.join(', ') : '';
+  } catch {
+    return '';
+  }
+}
+
 export default async function EditCampaignPage({ params }: { params: Params }) {
   const session = await requireRole(['admin', 'branch_manager']);
   const role = session.user.role as Role;
@@ -126,6 +137,33 @@ export default async function EditCampaignPage({ params }: { params: Params }) {
                   placeholder="Standee Bipay: bắt buộc phải có. Standee Prepago papa: có thể có hoặc không. ..."
                 />
               </details>
+            </div>
+
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="start_keywords">Từ khoá đầu ngày</Label>
+                <Input
+                  id="start_keywords"
+                  name="start_keywords"
+                  placeholder="CAMPAIGN, INICIO, BẮT ĐẦU"
+                  defaultValue={keywordsToInput(campaign.startKeywords)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Comma-separated. Vd <code>INICIO {campaign.code}</code>. Để trống = default <code>CAMPAIGN</code>.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="end_keywords">Từ khoá cuối ngày</Label>
+                <Input
+                  id="end_keywords"
+                  name="end_keywords"
+                  placeholder="END, FIN, CIERRE"
+                  defaultValue={keywordsToInput(campaign.endKeywords)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Vd <code>FIN {campaign.code} SUBS=23</code>. Để trống = default <code>END</code>.
+                </p>
+              </div>
             </div>
 
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">

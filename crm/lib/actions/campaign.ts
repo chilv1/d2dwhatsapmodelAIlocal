@@ -37,6 +37,20 @@ async function checkBranchScope(
   }
 }
 
+/**
+ * Parse comma-separated keywords vào JSON array string.
+ * Empty/whitespace → null (fallback default trong bot).
+ * Max 10 keywords, mỗi keyword ≤ 30 chars.
+ */
+function parseKeywordsField(raw: string): string | null {
+  const list = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length <= 30)
+    .slice(0, 10);
+  return list.length > 0 ? JSON.stringify(list) : null;
+}
+
 function parseRequirementsJson(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -77,6 +91,8 @@ export async function createCampaignAction(formData: FormData) {
   const requirementsJson = parseRequirementsJson(
     String(formData.get('requirements_json') || ''),
   );
+  const startKeywords = parseKeywordsField(String(formData.get('start_keywords') || ''));
+  const endKeywords = parseKeywordsField(String(formData.get('end_keywords') || ''));
   const targetSubscribers = parseInt(String(formData.get('target_subscribers') || '20'), 10);
   const branchIdStr = String(formData.get('branch_id') || '');
   const branchId = branchIdStr ? parseInt(branchIdStr, 10) : null;
@@ -99,6 +115,8 @@ export async function createCampaignAction(formData: FormData) {
       templateImagePath: templatePath,
       templateRequirements: templateRequirements || null,
       requirementsJson,
+      startKeywords,
+      endKeywords,
       targetSubscribers,
       branchId,
       startDate: new Date(),
@@ -140,6 +158,8 @@ export async function updateCampaignAction(formData: FormData) {
   const requirementsJson = parseRequirementsJson(
     String(formData.get('requirements_json') || ''),
   );
+  const startKeywords = parseKeywordsField(String(formData.get('start_keywords') || ''));
+  const endKeywords = parseKeywordsField(String(formData.get('end_keywords') || ''));
   const targetSubscribers = parseInt(
     String(formData.get('target_subscribers') || cur.targetSubscribers),
     10,
@@ -173,6 +193,8 @@ export async function updateCampaignAction(formData: FormData) {
     branchId: cur.branchId,
     templateRequirements: cur.templateRequirements,
     requirementsJson: cur.requirementsJson,
+    startKeywords: cur.startKeywords,
+    endKeywords: cur.endKeywords,
     alertThreshold: cur.alertThreshold,
     templateImagePath: cur.templateImagePath,
   };
@@ -182,6 +204,8 @@ export async function updateCampaignAction(formData: FormData) {
     description: description || null,
     templateRequirements: templateRequirements || null,
     requirementsJson,
+    startKeywords,
+    endKeywords,
     targetSubscribers,
     branchId,
     alertThreshold,
