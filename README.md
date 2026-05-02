@@ -1,6 +1,73 @@
-# Telecom Big — Campaign AI Bot (Node.js + whatsapp-web.js + OpenAI)
+# Telecom Big — Campaign AI Monitoring Platform
 
 Hệ thống AI tự động đánh giá ảnh hiện trường campaign do team leader bán hàng gửi qua WhatsApp group, so sánh với template chuẩn bằng **OpenAI GPT-4o vision**, và tổng hợp báo cáo cuối ngày tự động — dành cho **Telecom Big** (Peru).
+
+**Production:** https://image.bitelbot.com (admin only)
+
+## 📦 2 components
+
+```
+┌─────────────────────────┐         ┌─────────────────────────┐
+│  bot/  (Node.js)        │         │  crm/  (Next.js 16)     │
+│  ├─ whatsapp-web.js     │ ←─DB─→  │  ├─ Server components   │
+│  ├─ OpenAI vision       │ shared  │  ├─ Auth.js + RBAC      │
+│  ├─ Telegram admin      │ SQLite  │  ├─ react-leaflet maps  │
+│  │   commands           │         │  ├─ Recharts            │
+│  └─ Cache + throttle    │         │  └─ ExcelJS export      │
+└─────────────────────────┘         └─────────────────────────┘
+         │                                    │
+         └──────────── nginx ──────── HTTPS ──┘
+                       │
+                  systemd units
+                  (auto-restart)
+```
+
+## 🆕 Production features (toàn bộ phases A→D đã deploy)
+
+### Speed (Phase A)
+- Submissions list với thumbnails, multi-select bulk actions (approve/reject/delete)
+- 11 advanced filters (promotor, score range, date range, GPS area haversine, ...)
+- Quick filter chips (Today / Needs review / Rejected / Score<50 / No GPS)
+- Telegram admin: `/approve <id>`, `/reject <id> <reason>` từ chat
+- Real-time polling 15s — banner báo submission mới
+
+### Accuracy (Phase B)
+- **Multi-image submission**: promotor gửi N ảnh trong 30s window → group thành 1 submission, gallery view
+- **Image quality pre-check**: reject ảnh < 10KB / > 15MB / dimension < 400px TRƯỚC khi gọi AI (save cost)
+- **Comments/notes** internal giữa admin/manager per submission
+- **Audit timeline UI** per submission (override, comment, status changes)
+- **AI confidence routing**: low confidence → auto needs_review queue
+
+### Convenience (Phase C)
+- Mobile-responsive submissions list (collapsible columns)
+- **GPS heatmap** trên Reports với Leaflet circle markers (cluster grid 500m)
+- **Promotor leaderboard** standalone với 🥇🥈🥉 medals + sortable
+- **SLA tracking**: avg time submit → first review
+- **Daily Telegram digest** mở rộng (top promotors, training alerts, AI cost saved)
+- **Custom rejection reasons** predefined enum cho admin override
+
+### Monitoring (Phase D)
+- **Branch GPS HQ + radius** validation: submissions xa branch HQ → flag fuera-de-zona + needs_review
+- **Auto-escalation cron** (mỗi 30 phút): submissions stuck > 2h → Telegram admin alert
+- **Duplicate image alert**: cache hit > 24h → "♻️ Promotor reuse ảnh cũ"
+- **Weekly training cron** (Mon 8AM Lima): promotors reject_rate ≥ 50% → notify manager
+- **Cache rate alert**: hit rate < 20% → daily digest warning
+
+### Performance optimizations
+- **Vision result cache** (SHA-256 image hash + campaign + mode) → cache HIT 3ms vs API 4000ms (~1300x faster)
+- **Submission throttle** configurable (default 5s) — anti accidental double-tap
+- **Detection mode toggle** (Hướng 2): AI chỉ detect, code tính score deterministic
+- **Model picker**: swap gpt-4o ↔ gpt-4o-mini ↔ custom qua UI
+- **All 3 toggles + model picker** quản lý qua `/dashboard/config-ai`
+
+### Telegram admin commands (7)
+- `/status` — uptime, WhatsApp state, memory, **disk usage** với threshold 75%/90%, vision mode, today's stats
+- `/restart` — graceful restart via systemd
+- `/logs` — last 20 log lines (journalctl)
+- `/qr` + `/qr confirm` — force re-auth, gửi QR code mới qua chat
+- `/approve <id>` — quick override approved
+- `/reject <id> <reason>` — quick override rejected
+- `/help` — list commands
 
 ## Kiến trúc
 
