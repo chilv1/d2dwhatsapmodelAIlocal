@@ -27,6 +27,7 @@ import {
   getCachedEvaluation,
   setCachedEvaluation,
   isThrottled,
+  recordMetric,
 } from './cache.js';
 
 const CAMPAIGN_RE = /CAMPAIGN\s+(\S+)/i;
@@ -239,6 +240,7 @@ export async function handleImageSubmission({
   if (throttleEnabled && waSenderNumber && isThrottled({ senderNumber: waSenderNumber, campaignId: campaign.id })) {
     const msg = `⏳ Đã nhận submission cho *${campaign.code}* trong 5s gần đây. Đợi 1 chút rồi gửi lại.`;
     logger.info({ sender: waSenderNumber, campaign: campaign.code }, 'Throttled duplicate submission');
+    recordMetric('throttled');
     return { reply: msg, submission: null };
   }
 
@@ -282,6 +284,9 @@ export async function handleImageSubmission({
     });
     if (cachedEval) {
       logger.info({ hash: hash.slice(0, 12), campaign: campaign.code }, 'Vision cache HIT — skip API call');
+      recordMetric('cache_hit');
+    } else {
+      recordMetric('cache_miss');
     }
   }
 
@@ -384,6 +389,7 @@ export async function handleImageSubmission({
     meetsStandard: evaluation.meets_standard ? 1 : 0,
     aiFeedback: evaluation.feedback_for_user,
     aiRawResponse: JSON.stringify(evaluation),
+    visionCached: !!cachedEval,
   });
 
   if (parsed.type === 'campaign_end') {

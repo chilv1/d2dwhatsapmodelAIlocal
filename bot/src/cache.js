@@ -105,3 +105,21 @@ export function isThrottled({ senderNumber, campaignId }) {
 export function clearThrottle({ senderNumber, campaignId }) {
   throttleMap.delete(`${senderNumber}:${campaignId}`);
 }
+
+/**
+ * Tăng counter daily cho 1 metric. Format date 'YYYY-MM-DD' local.
+ * Không throw — log warn nếu fail.
+ */
+export async function recordMetric(metric) {
+  try {
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    await prisma.botMetric.upsert({
+      where: { uq_metric_date: { date, metric } },
+      update: { count: { increment: 1 } },
+      create: { date, metric, count: 1 },
+    });
+  } catch (err) {
+    logger.warn({ err: err.message, metric }, 'recordMetric failed');
+  }
+}

@@ -152,8 +152,11 @@ export default async function SubmissionDetailPage({ params }: { params: Params 
         </div>
         {sub.similarityScore !== null && (
           <div className="text-right">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">
+            <div className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 justify-end">
               AI Score
+              {sub.visionCached && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">⚡ cached</Badge>
+              )}
             </div>
             <div className="text-5xl font-bold tabular-nums">
               {sub.similarityScore}

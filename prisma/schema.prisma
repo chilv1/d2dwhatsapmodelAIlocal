@@ -115,6 +115,9 @@ model Submission {
   overrideReason        String?   @map("override_reason")
   overriddenAt          DateTime? @map("overridden_at")
 
+  // Vision cache tracking — true nếu evaluation lấy từ cache (không gọi API)
+  visionCached          Boolean   @default(false) @map("vision_cached")
+
   teamLeader        TeamLeader?   @relation(fields: [teamLeaderId], references: [id])
   campaign          Campaign?     @relation(fields: [campaignId], references: [id])
   promotor          Promotor?     @relation(fields: [promotorId], references: [id])
@@ -214,6 +217,20 @@ model Setting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+// Daily aggregated metrics cho bot performance (cache hit rate, throttle count, ...)
+// Increment via upsert per event. Key: (date YYYY-MM-DD, metric name).
+model BotMetric {
+  id        Int      @id @default(autoincrement())
+  date      String   // 'YYYY-MM-DD' local date
+  metric    String   // 'cache_hit' | 'cache_miss' | 'throttled' | 'api_call'
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, metric], name: "uq_metric_date")
+  @@index([date])
+  @@map("bot_metrics")
 }
 
 // Vision cache: dedupe AI calls cho cùng (ảnh + campaign). Key bằng SHA-256 image hash.
