@@ -6,6 +6,7 @@ import { config } from './src/config.js';
 import { logger } from './src/logger.js';
 import { startWhatsApp, stopWhatsApp } from './src/wa.js';
 import { createAdminApp } from './src/admin.js';
+import { startTelegramAdminPolling, stopTelegramAdminPolling } from './src/admin-commands.js';
 
 async function main() {
   logger.info(
@@ -27,9 +28,15 @@ async function main() {
   // WhatsApp client (sẽ in QR ra terminal lần đầu)
   await startWhatsApp();
 
+  // Telegram admin command polling (background, non-blocking)
+  startTelegramAdminPolling().catch((err) =>
+    logger.error({ err: err.message }, 'TG admin polling crashed'),
+  );
+
   // Graceful shutdown
   const shutdown = async (signal) => {
     logger.info({ signal }, 'Shutting down...');
+    stopTelegramAdminPolling();
     server.close();
     await stopWhatsApp();
     process.exit(0);
