@@ -163,3 +163,120 @@ export async function deleteSubmissionAction(formData: FormData) {
   const redirectTo = String(formData.get('redirect_after') || '');
   if (redirectTo) redirect(redirectTo);
 }
+
+/**
+ * Bulk override (approve/reject) nhiều submissions cùng lúc.
+ * @param formData ids: comma-separated ids; new_result: approved|rejected; reason
+ */
+export async function bulkOverrideAction(formData: FormData) {
+  const session = await requireRole(['admin', 'branch_manager']);
+  const userId = parseInt(session.user.id, 10);
+
+  const idsRaw = String(formData.get('ids') || '');
+  const ids = idsRaw
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n));
+  const newResult = String(formData.get('new_result') || '').trim();
+  const reason = String(formData.get('reason') || '').trim() || 'Bulk action';
+
+  if (ids.length === 0) throw new Error('Chưa chọn submission nào');
+  if (!['approved', 'rejected'].includes(newResult)) {
+    throw new Error('new_result phải là approved hoặc rejected');
+  }
+
+  const subs = await prisma.submission.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, campaignId: true, evaluationResult: true },
+  });
+
+  // Branch scoping
+  let allowedIds = subs.map((s) => s.id);
+  if (session.user.role === 'branch_manager') {
+    const camps = await prisma.campaign.findMany({
+      where: { id: { in: subs.map((s) => s.campaignId).filter((x): x is number => !!x) } },
+      select: { id: true, branchId: true },
+    });
+    const allowedCampaignIds = new Set(
+      camps.filter((c) => c.branchId === session.user.branchId).map((c) => c.id),
+    );
+    allowedIds = subs
+      .filter((s) => s.campaignId && allowedCampaignIds.has(s.campaignId))
+      .map((s) => s.id);
+  }
+
+  if (allowedIds.length === 0) {
+    throw new Error('Không có submission nào trong scope của bạn');
+  }
+
+  await prisma.submission.updateMany({
+    where: { id: { in: allowedIds } },
+    data: {
+      manualOverride: newResult,
+      overrideUserId: userId,
+      overrideReason: reason,
+      overriddenAt: new Date(),
+      evaluationResult: newResult,
+    },
+  });
+
+  await audit({
+    userId,
+    action: 'submission.bulk_override',
+    entityType: 'submission',
+    newValue: { ids: allowedIds, newResult, reason, count: allowedIds.length },
+  });
+
+  revalidatePath('/dashboard/submissions');
+  revalidatePath('/dashboard');
+}
+
+/**
+ * Bulk delete (admin only).
+ */
+export async function bulkDeleteAction(formData: FormData) {
+  const session = await requireRole(['admin']);
+  const userId = parseInt(session.user.id, 10);
+
+  const idsRaw = String(formData.get('ids') || '');
+  const ids = idsRaw
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n));
+
+  if (ids.length === 0) throw new Error('Chưa chọn submission nào');
+
+  const subs = await prisma.submission.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, imagePath: true },
+  });
+
+  // Clear FK trong daily_reports
+  await prisma.dailyReport.updateMany({
+    where: { startSubmissionId: { in: ids } },
+    data: { startSubmissionId: null },
+  });
+  await prisma.dailyReport.updateMany({
+    where: { endSubmissionId: { in: ids } },
+    data: { endSubmissionId: null },
+  });
+
+  await prisma.submission.deleteMany({ where: { id: { in: ids } } });
+
+  // Best-effort xoá files
+  for (const s of subs) {
+    if (s.imagePath) {
+      unlink(s.imagePath).catch(() => {});
+    }
+  }
+
+  await audit({
+    userId,
+    action: 'submission.bulk_delete',
+    entityType: 'submission',
+    oldValue: { ids, count: ids.length },
+  });
+
+  revalidatePath('/dashboard/submissions');
+  revalidatePath('/dashboard');
+}

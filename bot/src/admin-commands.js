@@ -29,6 +29,8 @@ const HELP_TEXT =
   '`/restart` — restart service (systemd auto-revives)\n' +
   '`/logs` — last 20 log lines\n' +
   '`/qr` — force re-auth (destroys WhatsApp session). Type `/qr confirm` to proceed.\n' +
+  '`/approve <id>` — override submission to approved\n' +
+  '`/reject <id> <reason>` — override submission to rejected (reason required)\n' +
   '`/help` — this message';
 
 async function tgGetUpdates(token, offset, timeout = 25) {
@@ -146,6 +148,73 @@ async function handleLogs(chatId) {
   });
 }
 
+async function handleApprove(chatId, idStr) {
+  const id = parseInt(idStr, 10);
+  if (!Number.isFinite(id)) {
+    await reply(chatId, '❌ Usage: `/approve <id>` (vd: `/approve 123`)');
+    return;
+  }
+  try {
+    const sub = await prisma.submission.findUnique({ where: { id } });
+    if (!sub) {
+      await reply(chatId, `❌ Không tìm thấy submission #${id}`);
+      return;
+    }
+    await prisma.submission.update({
+      where: { id },
+      data: {
+        manualOverride: 'approved',
+        overrideReason: 'Approved via Telegram admin command',
+        overriddenAt: new Date(),
+        evaluationResult: 'approved',
+      },
+    });
+    await reply(
+      chatId,
+      `✅ Submission #${id} APPROVED\nView: https://image.bitelbot.com/dashboard/submissions/${id}`,
+    );
+  } catch (err) {
+    await reply(chatId, `❌ Lỗi: \`${err.message}\``);
+  }
+}
+
+async function handleReject(chatId, args) {
+  // args = "123 Lý do từ chối"
+  const m = args.trim().match(/^(\d+)\s+(.+)$/s);
+  if (!m) {
+    await reply(chatId, '❌ Usage: `/reject <id> <lý do>` (vd: `/reject 123 Thiếu standee`)');
+    return;
+  }
+  const id = parseInt(m[1], 10);
+  const reason = m[2].trim();
+  if (!reason) {
+    await reply(chatId, '❌ Lý do là bắt buộc khi reject');
+    return;
+  }
+  try {
+    const sub = await prisma.submission.findUnique({ where: { id } });
+    if (!sub) {
+      await reply(chatId, `❌ Không tìm thấy submission #${id}`);
+      return;
+    }
+    await prisma.submission.update({
+      where: { id },
+      data: {
+        manualOverride: 'rejected',
+        overrideReason: reason,
+        overriddenAt: new Date(),
+        evaluationResult: 'rejected',
+      },
+    });
+    await reply(
+      chatId,
+      `❌ Submission #${id} REJECTED\nLý do: ${reason}\nView: https://image.bitelbot.com/dashboard/submissions/${id}`,
+    );
+  } catch (err) {
+    await reply(chatId, `❌ Lỗi: \`${err.message}\``);
+  }
+}
+
 async function handleQr(chatId, confirmed) {
   if (!confirmed) {
     pendingQrConfirm.set(chatId, Date.now() + QR_CONFIRM_WINDOW_MS);
@@ -209,6 +278,8 @@ async function handleUpdate(update) {
     if (text === '/logs') return await handleLogs(chatId);
     if (text === '/qr') return await handleQr(chatId, false);
     if (text === '/qr confirm') return await handleQr(chatId, true);
+    if (text.startsWith('/approve ')) return await handleApprove(chatId, text.slice(9).trim());
+    if (text.startsWith('/reject ')) return await handleReject(chatId, text.slice(8).trim());
     // Unknown command
     if (text.startsWith('/')) {
       await reply(chatId, `❓ Lệnh không nhận diện: \`${text}\`\nGõ \`/help\` để xem danh sách.`);
