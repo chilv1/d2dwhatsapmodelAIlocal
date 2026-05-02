@@ -89,6 +89,40 @@ export async function updateVisionSettingsAction(formData: FormData) {
   revalidatePath('/dashboard/notifications');
 }
 
+/**
+ * Toggle ON/OFF cho menu items phụ (Leaderboard, Branches).
+ * Default ON nếu setting chưa tồn tại.
+ */
+export async function updateFeatureFlagsAction(formData: FormData) {
+  const session = await requireRole(['admin']);
+  const userId = parseInt(session.user.id, 10);
+
+  const leaderboardEnabled = formData.get('leaderboard_enabled') === 'on';
+  const branchesEnabled = formData.get('branches_enabled') === 'on';
+
+  await setSettings([
+    {
+      key: 'feature.leaderboard_enabled',
+      value: leaderboardEnabled ? '1' : '0',
+      isSecret: false,
+    },
+    {
+      key: 'feature.branches_enabled',
+      value: branchesEnabled ? '1' : '0',
+      isSecret: false,
+    },
+  ]);
+
+  await audit({
+    userId,
+    action: 'settings.update_feature_flags',
+    entityType: 'settings',
+    newValue: { leaderboardEnabled, branchesEnabled },
+  });
+
+  revalidatePath('/dashboard', 'layout'); // refresh sidebar
+}
+
 export async function updateSmtpSettingsAction(formData: FormData) {
   const session = await requireRole(['admin']);
   const userId = parseInt(session.user.id, 10);

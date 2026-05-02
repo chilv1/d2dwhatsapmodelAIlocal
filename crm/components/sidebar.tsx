@@ -24,12 +24,19 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+type FeatureFlags = {
+  leaderboard: boolean;
+  branches: boolean;
+};
+
 type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   milestone?: string;
   adminOnly?: boolean;
+  // Optional toggle key — nếu set + flag OFF, ẩn item khỏi sidebar
+  featureKey?: keyof FeatureFlags;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -37,11 +44,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/submissions', label: 'Submissions', icon: ImageIcon },
   { href: '/dashboard/campaigns', label: 'Campaigns', icon: Megaphone },
   { href: '/dashboard/promotors', label: 'Promotors', icon: Users },
-  { href: '/dashboard/promotors/leaderboard', label: 'Leaderboard', icon: Trophy },
+  { href: '/dashboard/promotors/leaderboard', label: 'Leaderboard', icon: Trophy, featureKey: 'leaderboard' },
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
   { href: '/dashboard/users', label: 'Users + RBAC', icon: UserCog, adminOnly: true },
   { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText, adminOnly: true },
-  { href: '/dashboard/branches', label: 'Branches', icon: Building2, adminOnly: true },
+  { href: '/dashboard/branches', label: 'Branches', icon: Building2, adminOnly: true, featureKey: 'branches' },
   { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, adminOnly: true },
   { href: '/dashboard/config-ai', label: 'Config AI', icon: Cpu, adminOnly: true },
 ];
@@ -51,13 +58,15 @@ type SidebarProps = {
   userName: string;
   userRole: string;
   logoutAction: () => Promise<void>;
+  featureFlags: FeatureFlags;
 };
 
-export function Sidebar({ userEmail, userName, userRole, logoutAction }: SidebarProps) {
+export function Sidebar({ userEmail, userName, userRole, logoutAction, featureFlags }: SidebarProps) {
   const pathname = usePathname();
 
   const items = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && userRole !== 'admin') return false;
+    if (item.featureKey && !featureFlags[item.featureKey]) return false;
     return true;
   });
 

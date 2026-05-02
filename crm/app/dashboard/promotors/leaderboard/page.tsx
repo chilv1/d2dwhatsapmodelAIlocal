@@ -3,9 +3,11 @@
  * Period filter: 7d / 30d / all-time qua URL search params ?days=7|30|all
  */
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { requireSession, type Role } from '@/lib/rbac';
 import { formatDateTime } from '@/lib/format';
+import { getSetting } from '@/lib/settings';
 import {
   Card,
   CardContent,
@@ -36,6 +38,10 @@ export default async function LeaderboardPage({
 }: {
   searchParams: SearchParams;
 }) {
+  // Feature flag guard
+  const enabled = (await getSetting('feature.leaderboard_enabled')) !== '0';
+  if (!enabled) notFound();
+
   const session = await requireSession();
   const role = session.user.role as Role;
   const params = await searchParams;

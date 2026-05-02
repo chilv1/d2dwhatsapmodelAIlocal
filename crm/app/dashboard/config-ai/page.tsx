@@ -26,8 +26,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Cpu, Save, Activity, ListChecks, Plus, Power, Trash2 } from 'lucide-react';
-import { updateVisionSettingsAction } from '@/lib/actions/settings';
+import { Cpu, Save, Activity, ListChecks, Plus, Power, Trash2, Trophy, Building2 } from 'lucide-react';
+import { updateVisionSettingsAction, updateFeatureFlagsAction } from '@/lib/actions/settings';
 import { VisionModelPicker } from '@/components/vision-model-picker';
 import {
   addRejectionReasonAction,
@@ -59,6 +59,8 @@ export default async function ConfigAIPage() {
     throttleRaw,
     throttleSecRaw,
     visionModelRaw,
+    leaderboardRaw,
+    branchesRaw,
     metricsRows,
     topCachedImages,
     rejectionReasons,
@@ -68,6 +70,8 @@ export default async function ConfigAIPage() {
     getSetting('submission.throttle_enabled'),
     getSetting('submission.throttle_seconds'),
     getSetting('vision.model'),
+    getSetting('feature.leaderboard_enabled'),
+    getSetting('feature.branches_enabled'),
     prisma.botMetric.findMany({
       where: { date: { in: dateKeys } },
       orderBy: { date: 'asc' },
@@ -80,6 +84,8 @@ export default async function ConfigAIPage() {
       orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
     }),
   ]);
+  const leaderboardEnabled = leaderboardRaw !== '0';
+  const branchesEnabled = branchesRaw !== '0';
 
   const detectionEnabled = detectionRaw === '1';
   const cacheEnabled = cacheRaw === '1';
@@ -348,6 +354,84 @@ export default async function ConfigAIPage() {
               </Table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Feature toggles — bật/tắt menu items phụ */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Power className="h-4 w-4" />
+            Feature toggles
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Bật/tắt menu items phụ trong sidebar. OFF = ẩn khỏi sidebar + chặn URL trực tiếp (404).
+            Default ON. Reload page sau khi save để thấy sidebar update.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={updateFeatureFlagsAction} className="space-y-3">
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="leaderboard_enabled"
+                name="leaderboard_enabled"
+                defaultChecked={leaderboardEnabled}
+                className="h-4 w-4 mt-0.5 rounded border-input"
+              />
+              <div className="flex-1">
+                <Label
+                  htmlFor="leaderboard_enabled"
+                  className="text-sm cursor-pointer flex items-center gap-2"
+                >
+                  <Trophy className="h-3.5 w-3.5" />
+                  Leaderboard{' '}
+                  {leaderboardEnabled ? (
+                    <Badge variant="success" className="text-[10px]">ON</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px]">OFF</Badge>
+                  )}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Bảng xếp hạng promotor (rate / total / avg score / recent activity).
+                  URL: <code>/dashboard/promotors/leaderboard</code>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="branches_enabled"
+                name="branches_enabled"
+                defaultChecked={branchesEnabled}
+                className="h-4 w-4 mt-0.5 rounded border-input"
+              />
+              <div className="flex-1">
+                <Label
+                  htmlFor="branches_enabled"
+                  className="text-sm cursor-pointer flex items-center gap-2"
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  Branches{' '}
+                  {branchesEnabled ? (
+                    <Badge variant="success" className="text-[10px]">ON</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="text-[10px]">OFF</Badge>
+                  )}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Quản lý GPS HQ + radius cho fuera-de-zona validation (admin only).
+                  URL: <code>/dashboard/branches</code>
+                </p>
+              </div>
+            </div>
+
+            <Button type="submit" size="sm">
+              <Save className="h-3.5 w-3.5" />
+              Lưu toggles
+            </Button>
+          </form>
         </CardContent>
       </Card>
 

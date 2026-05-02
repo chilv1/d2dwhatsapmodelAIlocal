@@ -2,8 +2,10 @@
  * Branches admin — quản lý GPS HQ + radius cho fuera-de-zona validation.
  * Branches table tự seed qua bot khi tạo campaign — page này CHỈ edit GPS.
  */
+import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { requireRole } from '@/lib/rbac';
+import { getSetting } from '@/lib/settings';
 import {
   Card,
   CardContent,
@@ -30,6 +32,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function BranchesPage() {
   await requireRole(['admin']);
+
+  // Feature flag guard
+  const enabled = (await getSetting('feature.branches_enabled')) !== '0';
+  if (!enabled) notFound();
 
   const branches = await prisma.branch.findMany({
     orderBy: { code: 'asc' },
