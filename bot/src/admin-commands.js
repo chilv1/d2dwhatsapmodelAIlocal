@@ -4,7 +4,7 @@
  * Auth: chỉ chat_id trong notification_recipients (channel='telegram', is_active=1, alert_reject=1).
  */
 import { spawn } from 'node:child_process';
-import { rm } from 'node:fs/promises';
+import { rm, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
 import { logger } from './logger.js';
@@ -68,6 +68,23 @@ async function handleStatus(chatId) {
 
   const detectionEnabled = (await getSetting('vision.detection_mode_enabled', '0')) === '1';
 
+  // Disk stats — root filesystem (server storage)
+  let diskLine = '💽 Disk: `unknown`';
+  try {
+    const s = await statfs('/');
+    const totalBytes = Number(s.blocks) * Number(s.bsize);
+    const freeBytes = Number(s.bavail) * Number(s.bsize);
+    const usedBytes = totalBytes - freeBytes;
+    const usedGB = (usedBytes / 1024 / 1024 / 1024).toFixed(1);
+    const totalGB = (totalBytes / 1024 / 1024 / 1024).toFixed(0);
+    const pct = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+    const icon = pct >= 90 ? '🔴' : pct >= 75 ? '🟡' : '💽';
+    const warn = pct >= 90 ? ' ⚠️ CRITICAL — cleanup ngay!' : pct >= 75 ? ' ⚠️ WARNING' : '';
+    diskLine = `${icon} Disk: \`${usedGB} GB / ${totalGB} GB (${pct.toFixed(1)}%)\`${warn}`;
+  } catch (err) {
+    logger.warn({ err: err.message }, 'statfs failed');
+  }
+
   // DB stats (today)
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -82,6 +99,7 @@ async function handleStatus(chatId) {
     `⏱  Uptime: \`${uptimeStr}\`\n` +
     `📡 WhatsApp: \`${waState}\`\n` +
     `💾 Memory: \`${memMB} MB\`\n` +
+    `${diskLine}\n` +
     `🧠 Vision detection mode: \`${detectionEnabled ? 'ON' : 'OFF'}\`\n` +
     `📂 Active campaigns: \`${campaignCount}\`\n` +
     `📥 Submissions today: \`${todaySubs}\`\n` +
