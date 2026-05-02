@@ -18,6 +18,7 @@ import {
   Bell,
   LogOut,
   ScrollText,
+  Cpu,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/users', label: 'Users + RBAC', icon: UserCog, adminOnly: true },
   { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText, adminOnly: true },
   { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, adminOnly: true },
+  { href: '/dashboard/config-ai', label: 'Config AI', icon: Cpu, adminOnly: true },
 ];
 
 type SidebarProps = {

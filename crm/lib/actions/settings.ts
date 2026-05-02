@@ -61,19 +61,26 @@ export async function updateVisionSettingsAction(formData: FormData) {
   const detectionEnabled = formData.get('detection_enabled') === 'on';
   const cacheEnabled = formData.get('cache_enabled') === 'on';
   const throttleEnabled = formData.get('throttle_enabled') === 'on';
+  // Configurable throttle window — clamp [1, 300] giây
+  const throttleSecRaw = parseInt(String(formData.get('throttle_seconds') || '5'), 10);
+  const throttleSec = Number.isFinite(throttleSecRaw)
+    ? Math.max(1, Math.min(300, throttleSecRaw))
+    : 5;
 
   await setSettings([
     { key: 'vision.detection_mode_enabled', value: detectionEnabled ? '1' : '0', isSecret: false },
     { key: 'vision.cache_enabled', value: cacheEnabled ? '1' : '0', isSecret: false },
     { key: 'submission.throttle_enabled', value: throttleEnabled ? '1' : '0', isSecret: false },
+    { key: 'submission.throttle_seconds', value: String(throttleSec), isSecret: false },
   ]);
   await audit({
     userId,
     action: 'settings.update_vision',
     entityType: 'settings',
-    newValue: { detectionEnabled, cacheEnabled, throttleEnabled },
+    newValue: { detectionEnabled, cacheEnabled, throttleEnabled, throttleSeconds: throttleSec },
   });
 
+  revalidatePath('/dashboard/config-ai');
   revalidatePath('/dashboard/notifications');
 }
 

@@ -7,9 +7,17 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { prisma } from './db.js';
 import { logger } from './logger.js';
+import { getSetting } from './settings.js';
 
-const THROTTLE_TTL_MS = 5_000;
+const DEFAULT_THROTTLE_TTL_MS = 5_000;
 const throttleMap = new Map(); // "sender:campaignId" → expiresAt
+
+async function getThrottleTtlMs() {
+  const raw = await getSetting('submission.throttle_seconds', '5');
+  const sec = parseInt(raw || '5', 10);
+  if (!Number.isFinite(sec) || sec < 1) return DEFAULT_THROTTLE_TTL_MS;
+  return Math.min(300, sec) * 1000;
+}
 
 // Cleanup expired throttle entries mỗi 30s
 setInterval(() => {
@@ -88,17 +96,19 @@ export async function setCachedEvaluation({
 }
 
 /**
- * Throttle check: nếu sender đã gửi cho campaign này trong 5s gần đây → return true.
- * Side effect: nếu chưa throttle, MARK throttle (sender không thể gửi lại trong 5s nữa).
+ * Throttle check: nếu sender đã gửi cho campaign này trong window (config) → return true.
+ * Side effect: nếu chưa throttle, MARK throttle (sender không thể gửi lại trong window nữa).
+ * Window đọc từ DB setting `submission.throttle_seconds` (default 5s, clamp 1-300s).
  */
-export function isThrottled({ senderNumber, campaignId }) {
+export async function isThrottled({ senderNumber, campaignId }) {
   const key = `${senderNumber}:${campaignId}`;
   const now = Date.now();
   const expires = throttleMap.get(key);
   if (expires && expires > now) {
     return true;
   }
-  throttleMap.set(key, now + THROTTLE_TTL_MS);
+  const ttlMs = await getThrottleTtlMs();
+  throttleMap.set(key, now + ttlMs);
   return false;
 }
 

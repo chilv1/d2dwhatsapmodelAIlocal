@@ -237,8 +237,8 @@ export async function handleImageSubmission({
 
   // Throttle: cùng sender + cùng campaign trong 5s → reject (anti accidental double-tap)
   const throttleEnabled = (await getSetting('submission.throttle_enabled', '0')) === '1';
-  if (throttleEnabled && waSenderNumber && isThrottled({ senderNumber: waSenderNumber, campaignId: campaign.id })) {
-    const msg = `⏳ Đã nhận submission cho *${campaign.code}* trong 5s gần đây. Đợi 1 chút rồi gửi lại.`;
+  if (throttleEnabled && waSenderNumber && (await isThrottled({ senderNumber: waSenderNumber, campaignId: campaign.id }))) {
+    const msg = `⏳ Đã nhận submission cho *${campaign.code}* gần đây. Đợi 1 chút rồi gửi lại.`;
     logger.info({ sender: waSenderNumber, campaign: campaign.code }, 'Throttled duplicate submission');
     recordMetric('throttled');
     return { reply: msg, submission: null };
