@@ -37,12 +37,21 @@ export const dynamic = 'force-dynamic';
 
 type SearchParams = Promise<{ days?: string }>;
 
+// ⭐ Local date YYYY-MM-DD (timezone của OS server) — không dùng UTC để tránh
+// submissions cuối ngày Lima (UTC-5) bị nhảy sang ngày kế.
+function localDateKey(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function genDates(days: number): string[] {
   const out: string[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    out.push(d.toISOString().slice(0, 10));
+    out.push(localDateKey(d));
   }
   return out;
 }
@@ -77,7 +86,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
     dailyMap.set(d, { actual: 0, target: 0, achieved: 0 });
   }
   for (const r of reports) {
-    const key = r.reportDate.toISOString().slice(0, 10);
+    const key = localDateKey(r.reportDate);
     const cur = dailyMap.get(key);
     if (cur) {
       cur.actual += r.actualSubscribers;
@@ -100,7 +109,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
     statusMap.set(d, { date: d.slice(5), approved: 0, rejected: 0, needs_review: 0 });
   }
   for (const s of submissionsRange) {
-    const key = s.submittedAt.toISOString().slice(0, 10);
+    const key = localDateKey(s.submittedAt);
     const cur = statusMap.get(key);
     if (cur) {
       if (s.evaluationResult === 'approved') cur.approved += 1;

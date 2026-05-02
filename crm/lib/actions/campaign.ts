@@ -31,6 +31,25 @@ async function checkBranchScope(
   }
 }
 
+function parseRequirementsJson(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) return null;
+    const cleaned = parsed
+      .filter((it: any) => it && typeof it.label === 'string' && it.label.trim())
+      .map((it: any) => ({
+        label: String(it.label).trim(),
+        required: Boolean(it.required),
+        note: it.note == null || String(it.note).trim() === '' ? null : String(it.note).trim(),
+      }));
+    return cleaned.length > 0 ? JSON.stringify(cleaned) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function saveTemplateFile(file: File, code: string): Promise<string> {
   const ext = extname(file.name) || '.jpg';
   const filename = `template_${code.toLowerCase()}_${randomUUID().slice(0, 8)}${ext}`;
@@ -49,6 +68,9 @@ export async function createCampaignAction(formData: FormData) {
   const name = String(formData.get('name') || '').trim();
   const description = String(formData.get('description') || '').trim();
   const templateRequirements = String(formData.get('template_requirements') || '').trim();
+  const requirementsJson = parseRequirementsJson(
+    String(formData.get('requirements_json') || ''),
+  );
   const targetSubscribers = parseInt(String(formData.get('target_subscribers') || '20'), 10);
   const branchIdStr = String(formData.get('branch_id') || '');
   const branchId = branchIdStr ? parseInt(branchIdStr, 10) : null;
@@ -70,6 +92,7 @@ export async function createCampaignAction(formData: FormData) {
       description: description || null,
       templateImagePath: templatePath,
       templateRequirements: templateRequirements || null,
+      requirementsJson,
       targetSubscribers,
       branchId,
       startDate: new Date(),
@@ -108,6 +131,9 @@ export async function updateCampaignAction(formData: FormData) {
   const templateRequirements = String(
     formData.get('template_requirements') || '',
   ).trim();
+  const requirementsJson = parseRequirementsJson(
+    String(formData.get('requirements_json') || ''),
+  );
   const targetSubscribers = parseInt(
     String(formData.get('target_subscribers') || cur.targetSubscribers),
     10,
@@ -140,6 +166,7 @@ export async function updateCampaignAction(formData: FormData) {
     targetSubscribers: cur.targetSubscribers,
     branchId: cur.branchId,
     templateRequirements: cur.templateRequirements,
+    requirementsJson: cur.requirementsJson,
     alertThreshold: cur.alertThreshold,
     templateImagePath: cur.templateImagePath,
   };
@@ -148,6 +175,7 @@ export async function updateCampaignAction(formData: FormData) {
     name,
     description: description || null,
     templateRequirements: templateRequirements || null,
+    requirementsJson,
     targetSubscribers,
     branchId,
     alertThreshold,

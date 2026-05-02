@@ -34,8 +34,9 @@ import {
 import {
   updateTelegramSettingsAction,
   updateSmtpSettingsAction,
+  updateVisionSettingsAction,
 } from '@/lib/actions/settings';
-import { getTelegramConfig, getSmtpConfig } from '@/lib/settings';
+import { getTelegramConfig, getSmtpConfig, getSetting } from '@/lib/settings';
 import { TelegramChatHelper } from '@/components/telegram-chat-helper';
 
 const PASSWORD_PLACEHOLDER = '__keep__';
@@ -45,7 +46,7 @@ export const dynamic = 'force-dynamic';
 export default async function NotificationsPage() {
   await requireRole(['admin']);
 
-  const [recipients, branches, recentLogs, channels, telegramCfg, smtpCfg] =
+  const [recipients, branches, recentLogs, channels, telegramCfg, smtpCfg, visionDetectionRaw] =
     await Promise.all([
       prisma.notificationRecipient.findMany({
         include: { branch: { select: { code: true, name: true } } },
@@ -63,7 +64,9 @@ export default async function NotificationsPage() {
       channelStatus(),
       getTelegramConfig(),
       getSmtpConfig(),
+      getSetting('vision.detection_mode_enabled'),
     ]);
+  const visionDetectionEnabled = visionDetectionRaw === '1';
 
   return (
     <div className="space-y-6">
@@ -280,6 +283,52 @@ export default async function NotificationsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Vision — Detection Mode toggle */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Bell className="h-4 w-4" />
+              AI Vision — Detection Mode
+            </CardTitle>
+            {visionDetectionEnabled ? (
+              <Badge variant="success">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                ON
+              </Badge>
+            ) : (
+              <Badge variant="secondary">
+                <Power className="h-3 w-3 mr-1" />
+                OFF (mặc định)
+              </Badge>
+            )}
+          </div>
+          <CardDescription className="text-xs">
+            ON: AI chỉ detect items, code tính score deterministic (giảm bịa items, score ổn định).
+            OFF: AI tự đánh giá score (mặc định, đã hoạt động). Chỉ ảnh hưởng campaigns dùng structured editor.
+            Bot pickup setting mới sau tối đa 30 giây.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={updateVisionSettingsAction} className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="detection_enabled"
+              name="detection_enabled"
+              defaultChecked={visionDetectionEnabled}
+              className="h-4 w-4 rounded border-input"
+            />
+            <Label htmlFor="detection_enabled" className="text-sm cursor-pointer">
+              Bật detection mode
+            </Label>
+            <Button type="submit" size="sm">
+              <Save className="h-3.5 w-3.5" />
+              Lưu
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Add recipient form */}
       <Card>

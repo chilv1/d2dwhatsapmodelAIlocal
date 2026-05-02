@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { ArrowLeft } from 'lucide-react';
 import { createCampaignAction } from '@/lib/actions/campaign';
+import { CampaignRequirementsEditor } from '@/components/campaign-requirements-editor';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,17 +97,24 @@ export default async function NewCampaignPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="template_requirements">Yêu cầu chi tiết (cho AI)</Label>
-              <textarea
-                id="template_requirements"
-                name="template_requirements"
-                rows={4}
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                placeholder="Banner đỏ Telecom Big rộng 2m, đặt phía trước điểm bán DF. Promotor mặc áo đỏ đồng phục..."
-              />
+              <Label>Yêu cầu chi tiết (cho AI)</Label>
+              <CampaignRequirementsEditor />
               <p className="text-xs text-muted-foreground">
-                Mô tả càng chi tiết, AI đánh giá càng chính xác.
+                Thêm từng item kèm Required/Optional. AI chỉ trừ điểm cho item Required khi thiếu.
               </p>
+
+              <details className="pt-2">
+                <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                  Hoặc nhập text tự do (advanced — fallback nếu không dùng editor ở trên)
+                </summary>
+                <textarea
+                  id="template_requirements"
+                  name="template_requirements"
+                  rows={4}
+                  className="mt-2 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  placeholder="Banner đỏ Telecom Big rộng 2m, đặt phía trước điểm bán DF. Promotor mặc áo đỏ đồng phục..."
+                />
+              </details>
             </div>
 
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">

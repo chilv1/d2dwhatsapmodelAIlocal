@@ -54,6 +54,29 @@ export async function updateTelegramSettingsAction(formData: FormData) {
   revalidatePath('/dashboard/reports');
 }
 
+export async function updateVisionSettingsAction(formData: FormData) {
+  const session = await requireRole(['admin']);
+  const userId = parseInt(session.user.id, 10);
+
+  const enabled = formData.get('detection_enabled') === 'on';
+
+  await setSettings([
+    {
+      key: 'vision.detection_mode_enabled',
+      value: enabled ? '1' : '0',
+      isSecret: false,
+    },
+  ]);
+  await audit({
+    userId,
+    action: 'settings.update_vision',
+    entityType: 'settings',
+    newValue: { detectionEnabled: enabled },
+  });
+
+  revalidatePath('/dashboard/notifications');
+}
+
 export async function updateSmtpSettingsAction(formData: FormData) {
   const session = await requireRole(['admin']);
   const userId = parseInt(session.user.id, 10);

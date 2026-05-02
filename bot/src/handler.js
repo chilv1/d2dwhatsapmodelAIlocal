@@ -230,6 +230,7 @@ export async function handleImageSubmission({
         templateImagePath: campaign.templateImagePath,
         campaignName: campaign.name,
         campaignRequirements: campaign.templateRequirements,
+        requirementsJson: campaign.requirementsJson,
       });
       userMessage = formatStartReply(campaign, evaluation);
     } else {
@@ -237,6 +238,8 @@ export async function handleImageSubmission({
         endImagePath: imagePath,
         templateImagePath: campaign.templateImagePath,
         campaignName: campaign.name,
+        campaignRequirements: campaign.templateRequirements,  // ⭐ FIX: truyền requirements thật để AI nhất quán
+        requirementsJson: campaign.requirementsJson,
         reportedSubscribers: parsed.subs,
         targetSubscribers: campaign.targetSubscribers,
       });
@@ -294,9 +297,13 @@ export async function handleImageSubmission({
 
   if (parsed.type === 'campaign_end') {
     const startSub = await findTodayStartSubmission(campaign.id);
+    // ⭐ Local midnight (timezone của OS bot) — không dùng UTC vì user ở Lima (UTC-5)
+    // submit lúc 22:00 local sẽ bị tính sang ngày kế tiếp nếu dùng UTC date
+    const now = new Date();
+    const localMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     await upsertDailyReport({
       campaignId: campaign.id,
-      reportDate: new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00'),
+      reportDate: localMidnight,
       actualSubscribers: parsed.subs,
       targetSubscribers: campaign.targetSubscribers,
       startSubmissionId: startSub?.id ?? null,

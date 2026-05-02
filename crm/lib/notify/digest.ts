@@ -128,6 +128,12 @@ export async function buildDigestData(branchId?: number | null): Promise<DigestD
   };
 }
 
+// Escape Telegram Markdown V1 special chars (_, *, `, [)
+// Cần thiết vì campaign code như "MERCADO_01" có dấu _ khiến Telegram parse italic và lỗi.
+function mdEscape(s: string | null | undefined): string {
+  return String(s ?? '').replace(/([_*`[])/g, '\\$1');
+}
+
 /**
  * Format thành Telegram-friendly Markdown.
  */
@@ -137,7 +143,7 @@ export function digestMarkdown(d: DigestData): string {
     : '0';
 
   const lines = [
-    `📊 *Daily Digest — ${d.date}*`,
+    `📊 *Daily Digest — ${mdEscape(d.date)}*`,
     '',
     `*Tổng quan:* ${d.achievedCount}/${d.totalCampaigns} campaign ĐẠT mục tiêu`,
     `*Thuê bao:* ${d.totalActual}/${d.totalTarget} (${overallRate}%)`,
@@ -148,7 +154,7 @@ export function digestMarkdown(d: DigestData): string {
     for (const r of d.reports.slice(0, 10)) {
       const icon = r.achieved ? '✅' : '⚠️';
       lines.push(
-        `${icon} ${r.code} (${r.branch}) — ${r.actual}/${r.target} (${r.percent.toFixed(0)}%)`,
+        `${icon} ${mdEscape(r.code)} (${mdEscape(r.branch)}) — ${r.actual}/${r.target} (${r.percent.toFixed(0)}%)`,
       );
     }
   }
@@ -157,7 +163,7 @@ export function digestMarkdown(d: DigestData): string {
     lines.push('', '*Top promotors hôm nay:*');
     for (let i = 0; i < d.topPromotors.length; i++) {
       const p = d.topPromotors[i];
-      lines.push(`${i + 1}. ${p.name} (${p.employeeCode}) — ${p.approved}/${p.total} đạt`);
+      lines.push(`${i + 1}. ${mdEscape(p.name)} (${mdEscape(p.employeeCode)}) — ${p.approved}/${p.total} đạt`);
     }
   }
 
