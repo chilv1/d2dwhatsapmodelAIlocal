@@ -27,10 +27,12 @@ import {
 import { Bell, Send, Trash2, CheckCircle2, XCircle, Mail, Phone, Power, Save, ChevronRight } from 'lucide-react';
 import {
   addRecipientAction,
+  updateRecipientAction,
   toggleRecipientActiveAction,
   deleteRecipientAction,
   testSendAction,
 } from '@/lib/actions/notification';
+import { RecipientRow } from '@/components/recipient-row';
 import {
   updateTelegramSettingsAction,
   updateSmtpSettingsAction,
@@ -376,60 +378,16 @@ export default async function NotificationsPage() {
                 </TableRow>
               )}
               {recipients.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>
-                    <Badge variant={r.channel === 'telegram' ? 'info' : 'secondary'}>
-                      {r.channel}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{r.address}</TableCell>
-                  <TableCell className="text-sm">{r.label || '—'}</TableCell>
-                  <TableCell className="text-sm">
-                    {r.branch ? r.branch.code : <em className="text-muted-foreground">all</em>}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {r.digestDaily ? '✓' : '—'}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {r.alertReject ? '✓' : '—'}
-                  </TableCell>
-                  <TableCell>
-                    {r.isActive ? (
-                      <Badge variant="success">Active</Badge>
-                    ) : (
-                      <Badge variant="secondary">Disabled</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex gap-1.5 justify-end">
-                      <form action={testSendAction}>
-                        <input type="hidden" name="channel" value={r.channel} />
-                        <input type="hidden" name="address" value={r.address} />
-                        <Button
-                          type="submit"
-                          size="sm"
-                          variant="outline"
-                          title="Test send"
-                          disabled={!r.isActive || !channels[r.channel as 'telegram' | 'email']}
-                        >
-                          <Send className="h-3.5 w-3.5" />
-                        </Button>
-                      </form>
-                      <form action={toggleRecipientActiveAction}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <Button type="submit" size="sm" variant="ghost" title="Toggle active">
-                          <Power className="h-3.5 w-3.5" />
-                        </Button>
-                      </form>
-                      <form action={deleteRecipientAction}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <Button type="submit" size="sm" variant="ghost" title="Xoá">
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </form>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <RecipientRow
+                  key={r.id}
+                  recipient={r}
+                  branches={branches}
+                  channels={channels}
+                  updateAction={updateRecipientAction}
+                  toggleAction={toggleRecipientActiveAction}
+                  deleteAction={deleteRecipientAction}
+                  testSendAction={testSendAction}
+                />
               ))}
             </TableBody>
           </Table>

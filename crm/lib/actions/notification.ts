@@ -48,6 +48,54 @@ export async function addRecipientAction(formData: FormData) {
   revalidatePath('/dashboard/notifications');
 }
 
+export async function updateRecipientAction(formData: FormData) {
+  const session = await requireRole(['admin']);
+  const userId = parseInt(session.user.id, 10);
+  const id = parseInt(String(formData.get('id') || ''), 10);
+
+  const cur = await prisma.notificationRecipient.findUnique({ where: { id } });
+  if (!cur) throw new Error('Recipient not found');
+
+  const channel = String(formData.get('channel') || cur.channel).trim();
+  const address = String(formData.get('address') || cur.address).trim();
+  const label = String(formData.get('label') || '').trim() || null;
+  const branchIdStr = String(formData.get('branch_id') || '');
+  const branchId = branchIdStr ? parseInt(branchIdStr, 10) : null;
+  const digestDaily = formData.get('digest_daily') === 'on';
+  const alertReject = formData.get('alert_reject') === 'on';
+
+  if (!['telegram', 'email'].includes(channel)) {
+    throw new Error('Channel phải là telegram hoặc email');
+  }
+  if (!address) throw new Error('Địa chỉ là bắt buộc');
+
+  const oldVal = {
+    channel: cur.channel,
+    address: cur.address,
+    label: cur.label,
+    branchId: cur.branchId,
+    digestDaily: cur.digestDaily,
+    alertReject: cur.alertReject,
+  };
+  const newVal = { channel, address, label, branchId, digestDaily, alertReject };
+
+  await prisma.notificationRecipient.update({
+    where: { id },
+    data: newVal,
+  });
+
+  await audit({
+    userId,
+    action: 'notification.recipient_update',
+    entityType: 'notification_recipient',
+    entityId: id,
+    oldValue: oldVal,
+    newValue: newVal,
+  });
+
+  revalidatePath('/dashboard/notifications');
+}
+
 export async function toggleRecipientActiveAction(formData: FormData) {
   const session = await requireRole(['admin']);
   const userId = parseInt(session.user.id, 10);
