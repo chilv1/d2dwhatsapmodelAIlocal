@@ -124,10 +124,11 @@ export async function parseCaption(caption) {
     const endKeys = getKeywords(c.endKeywords, DEFAULT_END_KEYWORDS);
 
     // Match END trước (vì END thường chứa từ start như "campaign_end")
+    // u flag: word boundary nhận đúng Unicode chars (vd code "CAMPAÑA")
     for (const kw of endKeys) {
       const re = new RegExp(
         `\\b${escapeRegex(kw.toUpperCase())}\\s+${codeEsc}\\b.*?SUBS\\s*=\\s*(\\d+)`,
-        'is',
+        'isu',
       );
       const m = upper.match(re);
       if (m) {
@@ -139,7 +140,7 @@ export async function parseCaption(caption) {
     for (const kw of startKeys) {
       const re = new RegExp(
         `\\b${escapeRegex(kw.toUpperCase())}\\s+${codeEsc}\\b`,
-        'i',
+        'iu',
       );
       if (re.test(upper)) {
         return { type: 'campaign_start', code };

@@ -54,8 +54,8 @@ export default async function NewCampaignPage() {
                   required
                   placeholder="PROMO_LIMA_001"
                   className="font-mono"
-                  pattern="[A-Z0-9_]+"
-                  title="Chỉ chữ HOA, số, dấu _"
+                  pattern="[A-ZÁÉÍÓÚÑÜ0-9_]+"
+                  title="Chỉ chữ HOA (bao gồm Ñ Á É Í Ó Ú Ü), số, dấu _"
                 />
                 <p className="text-xs text-muted-foreground">
                   Team leader sẽ gửi <code>CAMPAIGN &lt;mã&gt;</code> qua WhatsApp.
