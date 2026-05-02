@@ -17,6 +17,12 @@ function getRoot(): string {
   return cwd.endsWith('/crm') ? resolve(cwd, '..') : cwd;
 }
 
+// Resolve data dir: env DATA_DIR > <root>/data fallback.
+function getDataDir(): string {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  return resolve(getRoot(), 'data');
+}
+
 async function checkBranchScope(
   branchId: number | null,
   session: Awaited<ReturnType<typeof requireRole>>,
@@ -53,7 +59,7 @@ function parseRequirementsJson(raw: string): string | null {
 async function saveTemplateFile(file: File, code: string): Promise<string> {
   const ext = extname(file.name) || '.jpg';
   const filename = `template_${code.toLowerCase()}_${randomUUID().slice(0, 8)}${ext}`;
-  const templateDir = resolve(getRoot(), 'data', 'templates');
+  const templateDir = resolve(getDataDir(), 'templates');
   const templatePath = resolve(templateDir, basename(filename));
   const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(templatePath, buffer);

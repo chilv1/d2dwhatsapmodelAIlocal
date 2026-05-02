@@ -12,10 +12,14 @@ import { resolve, normalize, basename } from 'node:path';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { auth } from '@/auth';
 
-// Project root từ cwd (Next chạy ở crm/)
-function getRoot(): string {
+// Resolve data directory:
+// 1. env DATA_DIR (production set explicit, vd /opt/telecombig/data)
+// 2. cwd-based fallback: nếu chạy từ crm/ → ../data, else ./data
+function getDataDir(): string {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
   const cwd = process.cwd();
-  return cwd.endsWith('/crm') ? resolve(cwd, '..') : cwd;
+  const root = cwd.endsWith('/crm') ? resolve(cwd, '..') : cwd;
+  return resolve(root, 'data');
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -41,17 +45,17 @@ export async function GET(
   }
 
   // Lý giải subfolder
+  const dataDir = getDataDir();
   let baseDir: string;
   let filename: string;
   if (parts[0] === 'template' || parts[0] === 'templates') {
-    baseDir = resolve(getRoot(), 'data', 'templates');
+    baseDir = resolve(dataDir, 'templates');
     filename = parts.slice(1).join('/');
   } else if (parts[0] === 'upload' || parts[0] === 'uploads') {
-    baseDir = resolve(getRoot(), 'data', 'uploads');
+    baseDir = resolve(dataDir, 'uploads');
     filename = parts.slice(1).join('/');
   } else {
-    // Default: uploads
-    baseDir = resolve(getRoot(), 'data', 'uploads');
+    baseDir = resolve(dataDir, 'uploads');
     filename = parts.join('/');
   }
 
