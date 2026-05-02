@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Bell, Send, Trash2, CheckCircle2, XCircle, Mail, Phone, Power, Save } from 'lucide-react';
+import { Bell, Send, Trash2, CheckCircle2, XCircle, Mail, Phone, Power, Save, ChevronRight } from 'lucide-react';
 import {
   addRecipientAction,
   toggleRecipientActiveAction,
@@ -81,39 +81,44 @@ export default async function NotificationsPage() {
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         {/* Telegram */}
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Phone className="h-4 w-4" />
-                Telegram
-              </CardTitle>
-              {channels.telegram ? (
-                <Badge variant="success">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Đã cấu hình
-                </Badge>
-              ) : (
-                <Badge variant="destructive">
-                  <XCircle className="h-3 w-3 mr-1" />
-                  Chưa cấu hình
-                </Badge>
-              )}
-            </div>
-            <CardDescription className="text-xs">
-              Tạo bot qua{' '}
-              <a
-                href="https://t.me/BotFather"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                @BotFather
-              </a>{' '}
-              → copy token → paste dưới đây.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form action={updateTelegramSettingsAction} className="space-y-3" autoComplete="off">
+          <details className="group">
+            <summary className="cursor-pointer list-none p-6 hover:bg-accent/30 transition-colors rounded-t-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90 text-muted-foreground" />
+                  <Phone className="h-4 w-4" />
+                  <span className="text-base font-semibold">Telegram</span>
+                </div>
+                {channels.telegram ? (
+                  <Badge variant="success">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Đã cấu hình
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    Chưa cấu hình
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 ml-6">
+                Click để xem/sửa cấu hình. Mặc định đóng để bảo mật.
+              </p>
+            </summary>
+            <div className="px-6 pb-6 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Tạo bot qua{' '}
+                <a
+                  href="https://t.me/BotFather"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  @BotFather
+                </a>{' '}
+                → copy token → paste dưới đây.
+              </p>
+              <form action={updateTelegramSettingsAction} className="space-y-3" autoComplete="off">
               <div className="space-y-2">
                 <Label htmlFor="bot_token" className="text-xs">
                   Bot Token <span className="text-muted-foreground">(format: số:chuỗi)</span>
@@ -144,45 +149,51 @@ export default async function NotificationsPage() {
               </div>
             </form>
 
-            {/* Helper: lấy chat_id sau khi save token */}
-            {channels.telegram && (
-              <div className="mt-4 pt-4 border-t">
-                <p className="text-xs text-muted-foreground mb-2">
-                  Để gửi notification, bạn cần <strong>chat_id</strong> thật. Mở
-                  Telegram → search bot → bấm Start, rồi click bên dưới:
-                </p>
-                <TelegramChatHelper />
-              </div>
-            )}
-          </CardContent>
+              {/* Helper: lấy chat_id sau khi save token */}
+              {channels.telegram && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Để gửi notification, bạn cần <strong>chat_id</strong> thật. Mở
+                    Telegram → search bot → bấm Start, rồi click bên dưới:
+                  </p>
+                  <TelegramChatHelper />
+                </div>
+              )}
+            </div>
+          </details>
         </Card>
 
         {/* SMTP */}
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                Email (SMTP)
-              </CardTitle>
-              {channels.email ? (
-                <Badge variant="success">
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  Đã cấu hình
-                </Badge>
-              ) : (
-                <Badge variant="destructive">
-                  <XCircle className="h-3 w-3 mr-1" />
-                  Chưa cấu hình
-                </Badge>
-              )}
-            </div>
-            <CardDescription className="text-xs">
-              Gmail App Password / Sendgrid / AWS SES.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form action={updateSmtpSettingsAction} className="space-y-3" autoComplete="off">
+          <details className="group">
+            <summary className="cursor-pointer list-none p-6 hover:bg-accent/30 transition-colors rounded-t-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90 text-muted-foreground" />
+                  <Mail className="h-4 w-4" />
+                  <span className="text-base font-semibold">Email (SMTP)</span>
+                </div>
+                {channels.email ? (
+                  <Badge variant="success">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Đã cấu hình
+                  </Badge>
+                ) : (
+                  <Badge variant="destructive">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    Chưa cấu hình
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 ml-6">
+                Click để xem/sửa cấu hình. Mặc định đóng để bảo mật.
+              </p>
+            </summary>
+            <div className="px-6 pb-6 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Gmail App Password / Sendgrid / AWS SES.
+              </p>
+              <form action={updateSmtpSettingsAction} className="space-y-3" autoComplete="off">
               <div className="grid gap-3 grid-cols-3">
                 <div className="space-y-2 col-span-2">
                   <Label htmlFor="host" className="text-xs">
@@ -277,7 +288,8 @@ export default async function NotificationsPage() {
                 </Button>
               </div>
             </form>
-          </CardContent>
+            </div>
+          </details>
         </Card>
       </div>
       {/* Add recipient form */}
