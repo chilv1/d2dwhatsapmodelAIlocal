@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { disconnectDb } from './db.js';
+import { notifyAdmins, notifyAdminsPhoto } from './telegram.js';
 import {
   handleImageSubmission,
   saveMediaBuffer,
@@ -21,6 +22,8 @@ import {
 } from './handler.js';
 
 let client;
+// Track xem QR đã gửi qua Telegram session này chưa — tránh spam (QR refresh mỗi ~60s)
+let qrSentToTelegramThisSession = false;
 
 export function getClient() {
   return client;
@@ -57,10 +60,27 @@ export async function startWhatsApp() {
     }
     logger.info('QR ASCII (dự phòng nếu PNG không mở được):');
     qrcodeTerminal.generate(qr, { small: true });
+
+    // Gửi QR qua Telegram cho admin scan từ điện thoại — chỉ 1 lần per session
+    if (!qrSentToTelegramThisSession) {
+      try {
+        await notifyAdminsPhoto(
+          pngPath,
+          '🔐 *WhatsApp bot cần scan QR mới*\n\n' +
+            'Mở WhatsApp → ⋮ Linked devices → Link a device → quét ảnh trên.\n' +
+            '_QR refresh mỗi ~60s, scan ngay nhé._',
+        );
+        qrSentToTelegramThisSession = true;
+        logger.info('✓ QR đã gửi qua Telegram cho admin');
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Không gửi được QR qua Telegram');
+      }
+    }
   });
 
   client.on('authenticated', () => {
     logger.info('✓ WhatsApp authenticated');
+    qrSentToTelegramThisSession = false; // reset cho lần disconnect tới
   });
 
   client.on('auth_failure', (msg) => {
@@ -71,8 +91,23 @@ export async function startWhatsApp() {
     logger.info(`✓ WhatsApp client ready (${config.waSessionName})`);
   });
 
-  client.on('disconnected', (reason) => {
-    logger.warn({ reason }, 'WhatsApp disconnected');
+  client.on('disconnected', async (reason) => {
+    logger.warn({ reason }, 'WhatsApp disconnected — exiting để systemd restart');
+
+    // Notify admin Telegram
+    try {
+      await notifyAdmins(
+        `⚠️ *WhatsApp bot disconnected*\n\n` +
+          `Lý do: \`${reason}\`\n` +
+          `Bot sẽ tự restart trong ~10s.\n` +
+          `Nếu session expire, QR mới sẽ được gửi tới đây.`,
+      );
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Không gửi được disconnect alert');
+    }
+
+    // Delay 2s cho HTTP request kịp finish, sau đó exit để systemd restart
+    setTimeout(() => process.exit(1), 2000);
   });
 
   client.on('message', async (msg) => {
