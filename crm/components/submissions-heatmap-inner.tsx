@@ -2,12 +2,22 @@
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
+export type ClusterSubmission = {
+  id: number;
+  imageUrl: string | null;
+  sender: string;
+  submittedAt: string;
+  score: number | null;
+  result: string;
+};
+
 export type HeatmapPoint = {
   lat: number;
   lng: number;
   count: number;
   code: string;
   name: string;
+  submissions: ClusterSubmission[];
 };
 
 type Props = {
@@ -16,22 +26,11 @@ type Props = {
   selectedCampaign?: string | null;
 };
 
-// 10-color palette — high contrast trên green/blue map tile
 const PALETTE = [
-  '#ef4444', // red
-  '#3b82f6', // blue
-  '#10b981', // emerald
-  '#f59e0b', // amber
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#14b8a6', // teal
-  '#f97316', // orange
-  '#6366f1', // indigo
-  '#84cc16', // lime
+  '#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
 ];
 
-// Deterministic hash → palette index. String chars sum mod palette length.
-// Cùng campaign code → cùng màu giữa các page reload.
 function colorForCampaign(code: string): string {
   if (!code) return '#6b7280';
   let hash = 0;
@@ -39,6 +38,22 @@ function colorForCampaign(code: string): string {
     hash = (hash * 31 + code.charCodeAt(i)) >>> 0;
   }
   return PALETTE[hash % PALETTE.length];
+}
+
+function resultBadgeColor(result: string): string {
+  if (result === 'approved') return '#10b981';
+  if (result === 'rejected') return '#ef4444';
+  return '#f59e0b'; // needs_review / pending
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString('es-PE', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function HeatmapInner({ points, height, selectedCampaign }: Props) {
@@ -56,7 +71,6 @@ export function HeatmapInner({ points, height, selectedCampaign }: Props) {
   const avgLat = points.reduce((a, p) => a + p.lat, 0) / points.length;
   const avgLng = points.reduce((a, p) => a + p.lng, 0) / points.length;
 
-  // Build legend: aggregate count per campaign code, sort desc
   const legendMap = new Map<string, { code: string; name: string; total: number }>();
   for (const p of points) {
     const cur = legendMap.get(p.code);
@@ -84,6 +98,7 @@ export function HeatmapInner({ points, height, selectedCampaign }: Props) {
             const radius = Math.min(8 + p.count * 2, 30);
             const dimmed = hasSelection && p.code !== selectedCampaign;
             const opacity = dimmed ? 0.15 : 0.7;
+            const remaining = p.count - p.submissions.length;
             return (
               <CircleMarker
                 key={i}
@@ -97,27 +112,78 @@ export function HeatmapInner({ points, height, selectedCampaign }: Props) {
                   weight: 1,
                 }}
               >
-                <Popup>
-                  <div className="space-y-1">
-                    <div className="font-mono text-xs">
-                      {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
+                <Popup minWidth={260} maxWidth={320}>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 pb-1 border-b">
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ background: color }}
+                      />
+                      <span className="font-mono text-xs font-bold">{p.code}</span>
+                      {p.name && (
+                        <span className="text-[10px] text-gray-600 truncate">— {p.name}</span>
+                      )}
                     </div>
-                    <div className="text-sm font-bold">{p.count} submission(s)</div>
-                    {p.code && (
-                      <div className="text-xs">
-                        <span
-                          className="inline-block w-2 h-2 rounded-full mr-1 align-middle"
-                          style={{ background: color }}
-                        />
-                        <span className="font-mono">{p.code}</span>
-                        {p.name && <span className="text-gray-600"> — {p.name}</span>}
+
+                    <div className="text-[11px] text-gray-600 flex justify-between">
+                      <span className="font-mono">{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</span>
+                      <span className="font-bold">{p.count} submission{p.count > 1 ? 's' : ''}</span>
+                    </div>
+
+                    {/* Thumbnails */}
+                    {p.submissions.length > 0 && (
+                      <div className="space-y-1.5">
+                        {p.submissions.map((s) => (
+                          <a
+                            key={s.id}
+                            href={`/dashboard/submissions/${s.id}`}
+                            className="flex gap-2 items-start hover:bg-muted/50 -mx-1 px-1 py-1 rounded"
+                          >
+                            {s.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={s.imageUrl}
+                                alt=""
+                                className="w-12 h-12 rounded object-cover border flex-shrink-0"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
+                                <span className="text-[10px] text-muted-foreground">no img</span>
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0 text-[11px]">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                  style={{ background: resultBadgeColor(s.result) }}
+                                />
+                                <span className="font-medium truncate">{s.sender}</span>
+                              </div>
+                              <div className="text-gray-500">{formatTime(s.submittedAt)}</div>
+                              {s.score != null && (
+                                <div className="text-gray-700">Score: {s.score}/100</div>
+                              )}
+                            </div>
+                          </a>
+                        ))}
                       </div>
                     )}
+
+                    {remaining > 0 && (
+                      <a
+                        href={`/dashboard/submissions?campaign=${encodeURIComponent(p.code)}&gps_area=${p.lat},${p.lng},0.5`}
+                        className="block text-center text-[11px] text-blue-600 hover:underline pt-1 border-t"
+                      >
+                        Xem {remaining} submission{remaining > 1 ? 's' : ''} khác →
+                      </a>
+                    )}
+
                     <a
                       href={`https://maps.google.com/?q=${p.lat},${p.lng}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline"
+                      className="block text-center text-[11px] text-gray-500 hover:underline"
                     >
                       Mở Google Maps →
                     </a>

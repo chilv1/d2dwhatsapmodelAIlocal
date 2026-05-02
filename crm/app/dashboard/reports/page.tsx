@@ -34,6 +34,7 @@ import { sendDigestNowAction } from '@/lib/actions/notification';
 import { channelStatus } from '@/lib/notify/dispatcher';
 import { SubmissionsHeatmap } from '@/components/submissions-heatmap';
 import { HeatmapFilters } from '@/components/heatmap-filters';
+import { fileUrl } from '@/lib/files';
 
 export const dynamic = 'force-dynamic';
 
@@ -225,16 +226,39 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
       ...(selectedType ? { submissionType: selectedType } : {}),
     },
     select: {
+      id: true,
       gpsLatitude: true,
       gpsLongitude: true,
+      imagePath: true,
+      waSenderName: true,
+      waSenderNumber: true,
+      submittedAt: true,
+      evaluationResult: true,
+      similarityScore: true,
+      submissionType: true,
       campaign: { select: { code: true, name: true } },
     },
+    orderBy: { submittedAt: 'desc' },
   });
-  const clusterMap = new Map<
-    string,
-    { lat: number; lng: number; count: number; code: string; name: string }
-  >();
+  type ClusterSubmission = {
+    id: number;
+    imageUrl: string | null;
+    sender: string;
+    submittedAt: string;
+    score: number | null;
+    result: string;
+  };
+  type Cluster = {
+    lat: number;
+    lng: number;
+    count: number;
+    code: string;
+    name: string;
+    submissions: ClusterSubmission[];
+  };
+  const clusterMap = new Map<string, Cluster>();
   const GRID = 0.005;
+  const MAX_PER_CLUSTER = 5;
   for (const s of gpsSubmissions) {
     if (s.gpsLatitude == null || s.gpsLongitude == null) continue;
     const gridLat = Math.round(s.gpsLatitude / GRID) * GRID;
@@ -242,11 +266,21 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
     const code = s.campaign?.code || '';
     const name = s.campaign?.name || '';
     const key = `${gridLat.toFixed(3)}_${gridLng.toFixed(3)}_${code}`;
-    const cur = clusterMap.get(key);
-    if (cur) {
-      cur.count += 1;
-    } else {
-      clusterMap.set(key, { lat: gridLat, lng: gridLng, count: 1, code, name });
+    let cur = clusterMap.get(key);
+    if (!cur) {
+      cur = { lat: gridLat, lng: gridLng, count: 0, code, name, submissions: [] };
+      clusterMap.set(key, cur);
+    }
+    cur.count += 1;
+    if (cur.submissions.length < MAX_PER_CLUSTER) {
+      cur.submissions.push({
+        id: s.id,
+        imageUrl: fileUrl(s.imagePath),
+        sender: s.waSenderName || s.waSenderNumber || 'unknown',
+        submittedAt: s.submittedAt.toISOString(),
+        score: s.similarityScore,
+        result: s.evaluationResult || 'pending',
+      });
     }
   }
   const heatmapPoints = Array.from(clusterMap.values())
