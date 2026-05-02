@@ -245,7 +245,9 @@ async function handleIncomingImage(msg, chat, senderNumber, senderName) {
     gpsAddress: fallbackLoc ? 'WA location pin' : null,
   });
 
+  logger.info({ submissionId: result.submission?.id, replyLen: result.reply?.length }, 'submission processed, sending reply');
   await sendReply(chat, msg, result.reply, senderNumber);
+  logger.info({ submissionId: result.submission?.id }, 'reply sent');
 }
 
 /**
@@ -268,17 +270,33 @@ async function sendReply(chat, originalMsg, body, senderNumber) {
   // Reply trong chat hiện tại (group hoặc 1-1)
   try {
     if (chat.isGroup) {
-      // Mention sender để nổi bật
-      const senderId = senderNumber;
-      await chat.sendMessage(`@${senderId.split('@')[0]} ${body}`, {
-        mentions: [senderId],
-        quotedMessageId: originalMsg.id._serialized,
-      });
+      // Mention sender để nổi bật. Detect @lid format (linked id) — không support mention
+      // theo cùng cách như @c.us; fallback gửi text plain trong group.
+      const senderId = senderNumber || '';
+      const isLidFormat = senderId.endsWith('@lid');
+      if (isLidFormat) {
+        // @lid không mentionable → gửi reply thường, không mention
+        await chat.sendMessage(body, {
+          quotedMessageId: originalMsg.id._serialized,
+        });
+      } else {
+        await chat.sendMessage(`@${senderId.split('@')[0]} ${body}`, {
+          mentions: [senderId],
+          quotedMessageId: originalMsg.id._serialized,
+        });
+      }
     } else {
       await originalMsg.reply(body);
     }
   } catch (err) {
-    logger.error({ err: err.message }, 'sendReply failed');
+    logger.error({ err: err.message, stack: err.stack?.slice(0, 500) }, 'sendReply failed');
+    // Last resort: try plain sendMessage without quote/mention
+    try {
+      await chat.sendMessage(body);
+      logger.info('sendReply fallback (no quote/mention) succeeded');
+    } catch (err2) {
+      logger.error({ err: err2.message }, 'sendReply fallback also failed');
+    }
   }
 }
 
