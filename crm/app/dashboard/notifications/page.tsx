@@ -46,7 +46,7 @@ export const dynamic = 'force-dynamic';
 export default async function NotificationsPage() {
   await requireRole(['admin']);
 
-  const [recipients, branches, recentLogs, channels, telegramCfg, smtpCfg, visionDetectionRaw] =
+  const [recipients, branches, recentLogs, channels, telegramCfg, smtpCfg, visionDetectionRaw, cacheRaw, throttleRaw] =
     await Promise.all([
       prisma.notificationRecipient.findMany({
         include: { branch: { select: { code: true, name: true } } },
@@ -65,8 +65,12 @@ export default async function NotificationsPage() {
       getTelegramConfig(),
       getSmtpConfig(),
       getSetting('vision.detection_mode_enabled'),
+      getSetting('vision.cache_enabled'),
+      getSetting('submission.throttle_enabled'),
     ]);
   const visionDetectionEnabled = visionDetectionRaw === '1';
+  const visionCacheEnabled = cacheRaw === '1';
+  const submissionThrottleEnabled = throttleRaw === '1';
 
   return (
     <div className="space-y-6">
@@ -284,47 +288,78 @@ export default async function NotificationsPage() {
         </Card>
       </div>
 
-      {/* AI Vision — Detection Mode toggle */}
+      {/* AI Vision & Performance Settings */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              AI Vision — Detection Mode
-            </CardTitle>
-            {visionDetectionEnabled ? (
-              <Badge variant="success">
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                ON
-              </Badge>
-            ) : (
-              <Badge variant="secondary">
-                <Power className="h-3 w-3 mr-1" />
-                OFF (mặc định)
-              </Badge>
-            )}
-          </div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            AI Vision & Performance
+          </CardTitle>
           <CardDescription className="text-xs">
-            ON: AI chỉ detect items, code tính score deterministic (giảm bịa items, score ổn định).
-            OFF: AI tự đánh giá score (mặc định, đã hoạt động). Chỉ ảnh hưởng campaigns dùng structured editor.
-            Bot pickup setting mới sau tối đa 30 giây.
+            Toggle các tính năng tối ưu cost / accuracy / latency. Bot pickup setting mới sau tối đa 30 giây.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={updateVisionSettingsAction} className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="detection_enabled"
-              name="detection_enabled"
-              defaultChecked={visionDetectionEnabled}
-              className="h-4 w-4 rounded border-input"
-            />
-            <Label htmlFor="detection_enabled" className="text-sm cursor-pointer">
-              Bật detection mode
-            </Label>
+          <form action={updateVisionSettingsAction} className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="detection_enabled"
+                  name="detection_enabled"
+                  defaultChecked={visionDetectionEnabled}
+                  className="h-4 w-4 mt-0.5 rounded border-input"
+                />
+                <div className="flex-1">
+                  <Label htmlFor="detection_enabled" className="text-sm cursor-pointer flex items-center gap-2">
+                    Detection mode {visionDetectionEnabled ? <Badge variant="success" className="text-[10px]">ON</Badge> : <Badge variant="secondary" className="text-[10px]">OFF</Badge>}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    AI chỉ detect items, code tính score deterministic. Giảm bịa items, score ổn định. Chỉ áp dụng campaigns dùng structured editor.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="cache_enabled"
+                  name="cache_enabled"
+                  defaultChecked={visionCacheEnabled}
+                  className="h-4 w-4 mt-0.5 rounded border-input"
+                />
+                <div className="flex-1">
+                  <Label htmlFor="cache_enabled" className="text-sm cursor-pointer flex items-center gap-2">
+                    Vision cache {visionCacheEnabled ? <Badge variant="success" className="text-[10px]">ON</Badge> : <Badge variant="secondary" className="text-[10px]">OFF</Badge>}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Cache AI evaluation theo SHA-256 image hash + campaign. Cùng ảnh + cùng campaign không gọi API lại — tiết kiệm cost + giảm latency. Cache invalidate khi đổi detection mode.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="throttle_enabled"
+                  name="throttle_enabled"
+                  defaultChecked={submissionThrottleEnabled}
+                  className="h-4 w-4 mt-0.5 rounded border-input"
+                />
+                <div className="flex-1">
+                  <Label htmlFor="throttle_enabled" className="text-sm cursor-pointer flex items-center gap-2">
+                    Submission throttle (5s) {submissionThrottleEnabled ? <Badge variant="success" className="text-[10px]">ON</Badge> : <Badge variant="secondary" className="text-[10px]">OFF</Badge>}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Cùng sender + cùng campaign trong 5 giây → reject duplicate (anti accidental double-tap). Không tốn API call cho duplicate.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <Button type="submit" size="sm">
               <Save className="h-3.5 w-3.5" />
-              Lưu
+              Lưu cấu hình
             </Button>
           </form>
         </CardContent>

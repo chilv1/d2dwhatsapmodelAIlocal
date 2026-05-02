@@ -21,6 +21,13 @@ import {
   evaluateSubmissionImage,
   evaluateEndOfDayReport,
 } from './vision.js';
+import { getSetting } from './settings.js';
+import {
+  imageHash,
+  getCachedEvaluation,
+  setCachedEvaluation,
+  isThrottled,
+} from './cache.js';
 
 const CAMPAIGN_RE = /CAMPAIGN\s+(\S+)/i;
 const END_RE = /END\s+(\S+).*?SUBS\s*=\s*(\d+)/is;
@@ -227,6 +234,14 @@ export async function handleImageSubmission({
     return { reply: msg, submission: sub };
   }
 
+  // Throttle: cùng sender + cùng campaign trong 5s → reject (anti accidental double-tap)
+  const throttleEnabled = (await getSetting('submission.throttle_enabled', '0')) === '1';
+  if (throttleEnabled && waSenderNumber && isThrottled({ senderNumber: waSenderNumber, campaignId: campaign.id })) {
+    const msg = `⏳ Đã nhận submission cho *${campaign.code}* trong 5s gần đây. Đợi 1 chút rồi gửi lại.`;
+    logger.info({ sender: waSenderNumber, campaign: campaign.code }, 'Throttled duplicate submission');
+    return { reply: msg, submission: null };
+  }
+
   if (
     !campaign.templateImagePath ||
     !existsSync(campaign.templateImagePath)
@@ -254,12 +269,28 @@ export async function handleImageSubmission({
     return { reply: msg, submission: sub };
   }
 
-  // Gọi OpenAI vision
+  // Vision cache lookup (cùng image hash + cùng campaign + cùng detection mode)
+  const cacheEnabled = (await getSetting('vision.cache_enabled', '0')) === '1';
+  const detectionMode = (await getSetting('vision.detection_mode_enabled', '0')) === '1';
+  const hash = imageHash(imagePath);
+  let cachedEval = null;
+  if (cacheEnabled) {
+    cachedEval = await getCachedEvaluation({
+      imageHash: hash,
+      campaignId: campaign.id,
+      detectionMode,
+    });
+    if (cachedEval) {
+      logger.info({ hash: hash.slice(0, 12), campaign: campaign.code }, 'Vision cache HIT — skip API call');
+    }
+  }
+
+  // Gọi OpenAI vision (hoặc dùng cache)
   let evaluation;
   let userMessage;
   try {
     if (parsed.type === 'campaign_start') {
-      evaluation = await evaluateSubmissionImage({
+      evaluation = cachedEval || await evaluateSubmissionImage({
         submissionImagePath: imagePath,
         templateImagePath: campaign.templateImagePath,
         campaignName: campaign.name,
@@ -268,17 +299,36 @@ export async function handleImageSubmission({
       });
       userMessage = formatStartReply(campaign, evaluation);
     } else {
-      const r = await evaluateEndOfDayReport({
-        endImagePath: imagePath,
-        templateImagePath: campaign.templateImagePath,
-        campaignName: campaign.name,
-        campaignRequirements: campaign.templateRequirements,  // ⭐ FIX: truyền requirements thật để AI nhất quán
-        requirementsJson: campaign.requirementsJson,
-        reportedSubscribers: parsed.subs,
-        targetSubscribers: campaign.targetSubscribers,
+      let endResult;
+      if (cachedEval) {
+        // Cached evaluation + tự build summary với reportedSubs (vì summary phụ thuộc subs)
+        evaluation = cachedEval;
+        const achieved = parsed.subs >= campaign.targetSubscribers;
+        const pct = campaign.targetSubscribers ? (parsed.subs / campaign.targetSubscribers) * 100 : 0;
+        const status = achieved && evaluation.meets_standard ? 'ĐẠT cả 2' : achieved ? 'subs ĐẠT, ảnh chưa đạt' : evaluation.meets_standard ? 'ảnh đạt, subs CHƯA' : 'CHƯA ĐẠT cả 2';
+        userMessage = `Campaign ${campaign.code}: ${parsed.subs}/${campaign.targetSubscribers} subs (${pct.toFixed(0)}%) | ảnh ${evaluation.similarity_score}/100 | ${status}\n\n${evaluation.feedback_for_user || ''}`;
+      } else {
+        endResult = await evaluateEndOfDayReport({
+          endImagePath: imagePath,
+          templateImagePath: campaign.templateImagePath,
+          campaignName: campaign.name,
+          campaignRequirements: campaign.templateRequirements,
+          requirementsJson: campaign.requirementsJson,
+          reportedSubscribers: parsed.subs,
+          targetSubscribers: campaign.targetSubscribers,
+        });
+        evaluation = endResult.evaluation;
+        userMessage = endResult.summary + '\n\n' + (evaluation.feedback_for_user || '');
+      }
+    }
+    // Save vision result vào cache (chỉ khi cache enabled + không phải cached miss)
+    if (cacheEnabled && !cachedEval) {
+      await setCachedEvaluation({
+        imageHash: hash,
+        campaignId: campaign.id,
+        detectionMode,
+        evaluation,
       });
-      evaluation = r.evaluation;
-      userMessage = r.summary + '\n\n' + (evaluation.feedback_for_user || '');
     }
   } catch (err) {
     logger.error({ err: err.message }, 'OpenAI vision call failed');

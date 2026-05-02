@@ -216,6 +216,23 @@ model Setting {
   @@map("settings")
 }
 
+// Vision cache: dedupe AI calls cho cùng (ảnh + campaign). Key bằng SHA-256 image hash.
+// Toggle qua setting `vision.cache_enabled` (default off).
+model VisionCache {
+  id              Int       @id @default(autoincrement())
+  imageHash       String    @map("image_hash")          // SHA-256 hex của image buffer
+  campaignId      Int       @map("campaign_id")
+  detectionMode   Boolean   @default(false) @map("detection_mode")  // Hướng 1 vs Hướng 2 cache riêng
+  evaluationJson  String    @map("evaluation_json")     // JSON full evaluation result (incl. gps)
+  hits            Int       @default(0)                 // analytics
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastHitAt       DateTime? @map("last_hit_at")
+
+  @@unique([imageHash, campaignId, detectionMode], name: "uq_vision_cache")
+  @@index([campaignId])
+  @@map("vision_cache")
+}
+
 // M6: subscribers nhận notification (per channel + per branch optional)
 model NotificationRecipient {
   id          Int      @id @default(autoincrement())

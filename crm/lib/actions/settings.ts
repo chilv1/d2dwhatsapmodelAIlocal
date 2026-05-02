@@ -58,20 +58,20 @@ export async function updateVisionSettingsAction(formData: FormData) {
   const session = await requireRole(['admin']);
   const userId = parseInt(session.user.id, 10);
 
-  const enabled = formData.get('detection_enabled') === 'on';
+  const detectionEnabled = formData.get('detection_enabled') === 'on';
+  const cacheEnabled = formData.get('cache_enabled') === 'on';
+  const throttleEnabled = formData.get('throttle_enabled') === 'on';
 
   await setSettings([
-    {
-      key: 'vision.detection_mode_enabled',
-      value: enabled ? '1' : '0',
-      isSecret: false,
-    },
+    { key: 'vision.detection_mode_enabled', value: detectionEnabled ? '1' : '0', isSecret: false },
+    { key: 'vision.cache_enabled', value: cacheEnabled ? '1' : '0', isSecret: false },
+    { key: 'submission.throttle_enabled', value: throttleEnabled ? '1' : '0', isSecret: false },
   ]);
   await audit({
     userId,
     action: 'settings.update_vision',
     entityType: 'settings',
-    newValue: { detectionEnabled: enabled },
+    newValue: { detectionEnabled, cacheEnabled, throttleEnabled },
   });
 
   revalidatePath('/dashboard/notifications');
