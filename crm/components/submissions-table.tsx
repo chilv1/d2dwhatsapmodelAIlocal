@@ -99,7 +99,7 @@ export function SubmissionsTable({
   return (
     <>
       <Table>
-        <TableHeader>
+        <TableHeader className="hidden md:table-header-group">
           <TableRow>
             <TableHead className="w-[40px]">
               <input
@@ -116,13 +116,13 @@ export function SubmissionsTable({
             <TableHead className="w-[80px]">Ảnh</TableHead>
             <TableHead className="w-[60px]">ID</TableHead>
             <TableHead>Thời gian</TableHead>
-            <TableHead>Người gửi</TableHead>
+            <TableHead className="hidden lg:table-cell">Người gửi</TableHead>
             <TableHead>Campaign</TableHead>
-            <TableHead>Loại</TableHead>
+            <TableHead className="hidden lg:table-cell">Loại</TableHead>
             <TableHead className="text-center">Score</TableHead>
             <TableHead>Kết quả</TableHead>
-            <TableHead className="text-right">Subs</TableHead>
-            <TableHead className="w-[60px]">GPS</TableHead>
+            <TableHead className="text-right hidden lg:table-cell">Subs</TableHead>
+            <TableHead className="w-[60px] hidden md:table-cell">GPS</TableHead>
             <TableHead className="text-right w-[140px]"></TableHead>
           </TableRow>
         </TableHeader>
@@ -167,8 +167,14 @@ export function SubmissionsTable({
                   )}
                 </TableCell>
                 <TableCell className="font-mono text-xs">#{s.id}</TableCell>
-                <TableCell className="text-sm">{formatDateTimeShort(s.submittedAt)}</TableCell>
                 <TableCell className="text-sm">
+                  {formatDateTimeShort(s.submittedAt)}
+                  {/* Mobile: show sender + type below time */}
+                  <div className="text-xs text-muted-foreground lg:hidden mt-0.5">
+                    {s.waSenderName || s.teamLeader?.name || '—'}
+                  </div>
+                </TableCell>
+                <TableCell className="text-sm hidden lg:table-cell">
                   {s.waSenderName || s.teamLeader?.name || '—'}
                 </TableCell>
                 <TableCell>
@@ -178,12 +184,12 @@ export function SubmissionsTable({
                     )}
                   </div>
                   {s.campaign?.name && (
-                    <div className="text-xs text-muted-foreground line-clamp-1">
+                    <div className="text-xs text-muted-foreground line-clamp-1 hidden md:block">
                       {s.campaign.name}
                     </div>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden lg:table-cell">
                   <SubmissionTypeBadge type={s.submissionType} />
                 </TableCell>
                 <TableCell className="text-center font-mono text-sm">
@@ -195,10 +201,10 @@ export function SubmissionsTable({
                 <TableCell>
                   <ResultBadge result={s.evaluationResult} />
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm">
+                <TableCell className="text-right font-mono text-sm hidden lg:table-cell">
                   {s.reportedSubscribers ?? '—'}
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   {map ? (
                     <a
                       href={map}

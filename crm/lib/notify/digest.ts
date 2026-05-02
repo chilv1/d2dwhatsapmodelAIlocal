@@ -19,6 +19,10 @@ export type DigestData = {
     achieved: boolean;
   }[];
   topPromotors: { name: string; employeeCode: string; approved: number; total: number }[];
+  // Phase C.5 — extended insights
+  worstPromotor: { name: string; employeeCode: string; rejectRate: number; total: number } | null;
+  cacheHitRate7d: number; // 0-100
+  costSavedUsd7d: number;
 };
 
 export async function buildDigestData(branchId?: number | null): Promise<DigestData> {
@@ -109,6 +113,44 @@ export async function buildDigestData(branchId?: number | null): Promise<DigestD
   // Suppress unused variable warning
   void ranked;
 
+  // Phase C.5: worst promotor (highest reject rate, min 5 submissions)
+  const worstCandidates = finalRanked
+    .filter((p) => p.total >= 5)
+    .map((p) => ({
+      name: p.name,
+      employeeCode: p.employeeCode,
+      total: p.total,
+      rejectRate: p.total > 0 ? ((p.total - p.approved) / p.total) * 100 : 0,
+    }))
+    .sort((a, b) => b.rejectRate - a.rejectRate);
+  const worstPromotor =
+    worstCandidates.length > 0 && worstCandidates[0].rejectRate >= 50
+      ? worstCandidates[0]
+      : null;
+
+  // Phase C.5: cache hit rate + cost saved (last 7 days)
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const dateKeys: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(sevenDaysAgo);
+    d.setDate(d.getDate() + i);
+    dateKeys.push(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+    );
+  }
+  const metrics = await prisma.botMetric.findMany({
+    where: { date: { in: dateKeys } },
+  });
+  const sumByMetric = (m: string) =>
+    metrics.filter((x) => x.metric === m).reduce((acc, x) => acc + x.count, 0);
+  const cacheHits = sumByMetric('cache_hit');
+  const cacheMisses = sumByMetric('cache_miss');
+  const totalEvals = cacheHits + cacheMisses;
+  const cacheHitRate7d = totalEvals > 0 ? (cacheHits / totalEvals) * 100 : 0;
+  const COST_PER_CALL_USD = 0.007;
+  const costSavedUsd7d = cacheHits * COST_PER_CALL_USD;
+
   return {
     date: today.toISOString().slice(0, 10),
     totalCampaigns: reports.length,
@@ -125,6 +167,9 @@ export async function buildDigestData(branchId?: number | null): Promise<DigestD
       achieved: r.achieved,
     })),
     topPromotors: finalRanked.slice(0, 5),
+    worstPromotor,
+    cacheHitRate7d,
+    costSavedUsd7d,
   };
 }
 
@@ -160,10 +205,33 @@ export function digestMarkdown(d: DigestData): string {
   }
 
   if (d.topPromotors.length > 0) {
-    lines.push('', '*Top promotors hôm nay:*');
+    lines.push('', '*🥇 Top promotors hôm nay:*');
     for (let i = 0; i < d.topPromotors.length; i++) {
       const p = d.topPromotors[i];
-      lines.push(`${i + 1}. ${mdEscape(p.name)} (${mdEscape(p.employeeCode)}) — ${p.approved}/${p.total} đạt`);
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+      lines.push(`${medal} ${mdEscape(p.name)} (${mdEscape(p.employeeCode)}) — ${p.approved}/${p.total} đạt`);
+    }
+  }
+
+  // Phase C.5: cảnh báo promotor cần training
+  if (d.worstPromotor) {
+    lines.push(
+      '',
+      '*⚠️ Cần training:*',
+      `${mdEscape(d.worstPromotor.name)} (${mdEscape(d.worstPromotor.employeeCode)}) — ` +
+        `${d.worstPromotor.rejectRate.toFixed(0)}% reject rate, ${d.worstPromotor.total} submissions`,
+    );
+  }
+
+  // Phase C.5: cache stats (admin insight)
+  if (d.cacheHitRate7d > 0 || d.costSavedUsd7d > 0) {
+    lines.push(
+      '',
+      '*⚡ AI Performance (7d):*',
+      `Cache hit rate: ${d.cacheHitRate7d.toFixed(0)}% — saved \\$${d.costSavedUsd7d.toFixed(2)}`,
+    );
+    if (d.cacheHitRate7d < 20 && d.cacheHitRate7d > 0) {
+      lines.push('_⚠️ Cache hit rate thấp — có thể config cần kiểm tra._');
     }
   }
 

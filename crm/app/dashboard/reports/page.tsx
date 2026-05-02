@@ -29,9 +29,10 @@ import {
   type SubmissionStatusBucket,
   type BranchKpi,
 } from '@/components/charts';
-import { FileSpreadsheet, BarChart3, Download, Send } from 'lucide-react';
+import { FileSpreadsheet, BarChart3, Download, Send, Map as MapIcon, Clock } from 'lucide-react';
 import { sendDigestNowAction } from '@/lib/actions/notification';
 import { channelStatus } from '@/lib/notify/dispatcher';
+import { SubmissionsHeatmap } from '@/components/submissions-heatmap';
 
 export const dynamic = 'force-dynamic';
 
@@ -200,6 +201,63 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   ]);
   const anyChannelReady = channels.telegram || channels.email;
 
+  // Phase C.2: GPS heatmap — aggregate submissions theo cluster grid 0.005° (~500m)
+  const gpsSubmissions = await prisma.submission.findMany({
+    where: {
+      ...subScope,
+      submittedAt: { gte: fromDate },
+      gpsLatitude: { not: null },
+      gpsLongitude: { not: null },
+    },
+    select: {
+      gpsLatitude: true,
+      gpsLongitude: true,
+      campaign: { select: { code: true } },
+    },
+  });
+  const clusterMap = new Map<string, { lat: number; lng: number; count: number; sample: string }>();
+  const GRID = 0.005;
+  for (const s of gpsSubmissions) {
+    if (s.gpsLatitude == null || s.gpsLongitude == null) continue;
+    const gridLat = Math.round(s.gpsLatitude / GRID) * GRID;
+    const gridLng = Math.round(s.gpsLongitude / GRID) * GRID;
+    const key = `${gridLat.toFixed(3)}_${gridLng.toFixed(3)}`;
+    const cur = clusterMap.get(key);
+    if (cur) {
+      cur.count += 1;
+    } else {
+      clusterMap.set(key, {
+        lat: gridLat,
+        lng: gridLng,
+        count: 1,
+        sample: s.campaign?.code || '',
+      });
+    }
+  }
+  const heatmapPoints = Array.from(clusterMap.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 100);
+
+  // Phase C.4: SLA tracking — avg time from submittedAt → firstReviewedAt
+  const reviewedSubs = await prisma.submission.findMany({
+    where: {
+      ...subScope,
+      submittedAt: { gte: fromDate },
+      firstReviewedAt: { not: null },
+    },
+    select: { submittedAt: true, firstReviewedAt: true },
+  });
+  let avgSlaMinutes = 0;
+  if (reviewedSubs.length > 0) {
+    const totalMs = reviewedSubs.reduce(
+      (acc, s) => acc + (s.firstReviewedAt!.getTime() - s.submittedAt.getTime()),
+      0,
+    );
+    avgSlaMinutes = Math.round(totalMs / reviewedSubs.length / 60_000);
+  }
+  const slaCoverage =
+    totalSubs > 0 ? ((reviewedSubs.length / totalSubs) * 100).toFixed(0) : '0';
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between flex-wrap gap-4">
@@ -286,6 +344,56 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
           </CardContent>
         </Card>
       )}
+
+      {/* Phase C.2: GPS heatmap */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MapIcon className="h-4 w-4" />
+            GPS Heatmap — Phân bố submissions ({range} ngày)
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {gpsSubmissions.length} submissions có GPS, gom thành {heatmapPoints.length} clusters (~500m). Color = density.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SubmissionsHeatmap points={heatmapPoints} height={400} />
+        </CardContent>
+      </Card>
+
+      {/* Phase C.4: SLA tracking summary */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            SLA — Avg review time ({range} ngày)
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Thời gian từ submission được gửi → admin review (override hoặc add comment) đầu tiên.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Avg review time</div>
+              <div className="text-2xl font-bold tabular-nums">
+                {avgSlaMinutes > 0 ? `${avgSlaMinutes} min` : '—'}
+              </div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Reviewed</div>
+              <div className="text-2xl font-bold tabular-nums">
+                {reviewedSubs.length}
+                <span className="text-sm text-muted-foreground"> / {totalSubs}</span>
+              </div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Coverage</div>
+              <div className="text-2xl font-bold tabular-nums">{slaCoverage}%</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Top promotors */}
       <Card>

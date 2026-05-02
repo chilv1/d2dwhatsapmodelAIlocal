@@ -26,9 +26,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Cpu, Save, Activity } from 'lucide-react';
+import { Cpu, Save, Activity, ListChecks, Plus, Power, Trash2 } from 'lucide-react';
 import { updateVisionSettingsAction } from '@/lib/actions/settings';
 import { VisionModelPicker } from '@/components/vision-model-picker';
+import {
+  addRejectionReasonAction,
+  toggleRejectionReasonAction,
+  deleteRejectionReasonAction,
+} from '@/lib/actions/rejection-reasons';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +61,7 @@ export default async function ConfigAIPage() {
     visionModelRaw,
     metricsRows,
     topCachedImages,
+    rejectionReasons,
   ] = await Promise.all([
     getSetting('vision.detection_mode_enabled'),
     getSetting('vision.cache_enabled'),
@@ -69,6 +75,9 @@ export default async function ConfigAIPage() {
     prisma.visionCache.findMany({
       orderBy: { hits: 'desc' },
       take: 5,
+    }),
+    prisma.rejectionReason.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
     }),
   ]);
 
@@ -339,6 +348,95 @@ export default async function ConfigAIPage() {
               </Table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Phase C.6: Custom Rejection Reasons */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ListChecks className="h-4 w-4" />
+            Rejection Reasons ({rejectionReasons.length})
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Predefined reasons cho admin override form. Code (vd NO_STANDEE) + label (vd "Thiếu standee bắt buộc").
+            Sort order: số nhỏ hơn xếp trước.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Add new */}
+          <form action={addRejectionReasonAction} className="grid gap-3 grid-cols-1 sm:grid-cols-4 items-end">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Code (HOA, _)</label>
+              <Input name="code" required placeholder="NO_STANDEE" pattern="[A-Z0-9_]+" />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-xs text-muted-foreground">Label</label>
+              <Input name="label" required placeholder="Thiếu standee bắt buộc" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Sort order</label>
+              <div className="flex gap-2">
+                <Input name="sort_order" type="number" defaultValue="10" className="w-20" />
+                <Button type="submit" size="sm">
+                  <Plus className="h-3.5 w-3.5" />
+                  Thêm
+                </Button>
+              </div>
+            </div>
+          </form>
+
+          {/* List existing */}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[80px]">Order</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-right w-[120px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rejectionReasons.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                    Chưa có rejection reason nào.
+                  </TableCell>
+                </TableRow>
+              )}
+              {rejectionReasons.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="text-center font-mono text-sm">{r.sortOrder}</TableCell>
+                  <TableCell className="font-mono text-xs">{r.code}</TableCell>
+                  <TableCell className="text-sm">{r.label}</TableCell>
+                  <TableCell className="text-center">
+                    {r.isActive ? (
+                      <Badge variant="success" className="text-[10px]">Active</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex gap-1.5 justify-end">
+                      <form action={toggleRejectionReasonAction}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <Button type="submit" size="sm" variant="ghost">
+                          <Power className="h-3.5 w-3.5" />
+                        </Button>
+                      </form>
+                      <form action={deleteRejectionReasonAction}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <Button type="submit" size="sm" variant="ghost">
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </form>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

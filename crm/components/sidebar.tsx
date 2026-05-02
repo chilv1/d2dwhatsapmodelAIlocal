@@ -19,6 +19,7 @@ import {
   LogOut,
   ScrollText,
   Cpu,
+  Trophy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/submissions', label: 'Submissions', icon: ImageIcon },
   { href: '/dashboard/campaigns', label: 'Campaigns', icon: Megaphone },
   { href: '/dashboard/promotors', label: 'Promotors', icon: Users },
+  { href: '/dashboard/promotors/leaderboard', label: 'Leaderboard', icon: Trophy },
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
   { href: '/dashboard/users', label: 'Users + RBAC', icon: UserCog, adminOnly: true },
   { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText, adminOnly: true },

@@ -227,6 +227,18 @@ model Setting {
   @@map("settings")
 }
 
+// Phase C.6: Custom rejection reasons — predefined dropdown options cho admin override.
+model RejectionReason {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique  // 'NO_STANDEE_BIPAY', 'BLUR', 'WRONG_LOCATION'
+  label     String              // hiển thị
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("rejection_reasons")
+}
+
 // Phase B: Multi-image submission — promotor gửi nhiều ảnh cùng campaign trong 30s window
 // → group thành 1 submission với N images. Submission.imagePath = primary (first).
 model SubmissionImage {
