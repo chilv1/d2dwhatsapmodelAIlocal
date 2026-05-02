@@ -8,6 +8,16 @@ import OpenAI from 'openai';
 import { config } from './config.js';
 import { getSetting } from './settings.js';
 
+/**
+ * Resolve model: DB setting `vision.model` > env OPENAI_VISION_MODEL > 'gpt-4o' default.
+ * Cho phép admin swap model qua CRM mà không cần đổi env + restart.
+ */
+async function getActiveVisionModel() {
+  const dbModel = await getSetting('vision.model', '');
+  if (dbModel && dbModel.trim()) return dbModel.trim();
+  return config.visionModel || 'gpt-4o';
+}
+
 const openai = new OpenAI({ apiKey: config.openaiApiKey });
 
 const MIME_BY_EXT = {
@@ -342,7 +352,7 @@ async function runDetectionMode({
     'Trả về detections cho TỪNG item trong CHECKLIST theo schema.';
 
   const response = await openai.chat.completions.create({
-    model: config.visionModel,
+    model: await getActiveVisionModel(),
     max_tokens: 1500,
     temperature: 0,
     response_format: {
@@ -460,7 +470,7 @@ export async function evaluateSubmissionImage({
       'Trả về JSON theo schema.';
 
   const response = await openai.chat.completions.create({
-    model: config.visionModel,
+    model: await getActiveVisionModel(),
     max_tokens: 1500,
     temperature: 0,  // ⭐ Deterministic — cùng input → cùng output
     response_format: {

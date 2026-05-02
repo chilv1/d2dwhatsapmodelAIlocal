@@ -66,18 +66,23 @@ export async function updateVisionSettingsAction(formData: FormData) {
   const throttleSec = Number.isFinite(throttleSecRaw)
     ? Math.max(1, Math.min(300, throttleSecRaw))
     : 5;
+  // Vision model — preset hoặc custom string. Empty = fallback env OPENAI_VISION_MODEL.
+  const modelRaw = String(formData.get('model') || '').trim();
+  const modelCustom = String(formData.get('model_custom') || '').trim();
+  const visionModel = modelRaw === '__custom__' ? modelCustom : modelRaw;
 
   await setSettings([
     { key: 'vision.detection_mode_enabled', value: detectionEnabled ? '1' : '0', isSecret: false },
     { key: 'vision.cache_enabled', value: cacheEnabled ? '1' : '0', isSecret: false },
     { key: 'submission.throttle_enabled', value: throttleEnabled ? '1' : '0', isSecret: false },
     { key: 'submission.throttle_seconds', value: String(throttleSec), isSecret: false },
+    { key: 'vision.model', value: visionModel || null, isSecret: false },
   ]);
   await audit({
     userId,
     action: 'settings.update_vision',
     entityType: 'settings',
-    newValue: { detectionEnabled, cacheEnabled, throttleEnabled, throttleSeconds: throttleSec },
+    newValue: { detectionEnabled, cacheEnabled, throttleEnabled, throttleSeconds: throttleSec, visionModel: visionModel || '(env fallback)' },
   });
 
   revalidatePath('/dashboard/config-ai');

@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/table';
 import { Cpu, Save, Activity } from 'lucide-react';
 import { updateVisionSettingsAction } from '@/lib/actions/settings';
+import { VisionModelPicker } from '@/components/vision-model-picker';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,7 @@ export default async function ConfigAIPage() {
     cacheRaw,
     throttleRaw,
     throttleSecRaw,
+    visionModelRaw,
     metricsRows,
     topCachedImages,
   ] = await Promise.all([
@@ -59,6 +61,7 @@ export default async function ConfigAIPage() {
     getSetting('vision.cache_enabled'),
     getSetting('submission.throttle_enabled'),
     getSetting('submission.throttle_seconds'),
+    getSetting('vision.model'),
     prisma.botMetric.findMany({
       where: { date: { in: dateKeys } },
       orderBy: { date: 'asc' },
@@ -73,6 +76,7 @@ export default async function ConfigAIPage() {
   const cacheEnabled = cacheRaw === '1';
   const throttleEnabled = throttleRaw === '1';
   const throttleSeconds = parseInt(throttleSecRaw || '5', 10) || 5;
+  const visionModel = visionModelRaw || '';
 
   const todayKey = dateKeys[dateKeys.length - 1];
   const sumByMetric = (metric: string, dateFilter?: string) =>
@@ -123,6 +127,11 @@ export default async function ConfigAIPage() {
         </CardHeader>
         <CardContent>
           <form action={updateVisionSettingsAction} className="space-y-4">
+            {/* Model picker */}
+            <div className="border-b pb-4">
+              <VisionModelPicker defaultValue={visionModel} />
+            </div>
+
             <div className="space-y-3">
               <div className="flex items-start gap-3">
                 <input
