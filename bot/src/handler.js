@@ -31,6 +31,19 @@ import {
 } from './cache.js';
 import { checkImageQuality } from './image-quality.js';
 import { prisma } from './db.js';
+import { notifyAdmins } from './telegram.js';
+
+// Phase D.3: Haversine distance km giữa 2 GPS points
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
 
 // Phase B: Multi-image grouping per sender (30s window).
 // Khi promotor gửi nhiều ảnh liên tiếp KHÔNG có caption → attach vào active submission.
@@ -377,6 +390,34 @@ export async function handleImageSubmission({
     if (cachedEval) {
       logger.info({ hash: hash.slice(0, 12), campaign: campaign.code }, 'Vision cache HIT — skip API call');
       recordMetric('cache_hit');
+
+      // Phase D.2: Duplicate image alert — nếu cache row đã có lastHitAt > 24h trước
+      try {
+        const cacheRow = await prisma.visionCache.findUnique({
+          where: {
+            uq_vision_cache: {
+              imageHash: hash,
+              campaignId: campaign.id,
+              detectionMode,
+            },
+          },
+          select: { createdAt: true, hits: true },
+        });
+        if (cacheRow) {
+          const ageH = (Date.now() - cacheRow.createdAt.getTime()) / 3600_000;
+          if (ageH > 24) {
+            notifyAdmins(
+              `♻️ *Duplicate image detected*\n\n` +
+                `Promotor *${waSenderName || waSenderNumber}* gửi lại ảnh đã submit cho campaign *${campaign.code}* cách đây ${Math.floor(ageH)}h.\n` +
+                `Image hash: \`${hash.slice(0, 16)}...\`\n` +
+                `Hits: ${cacheRow.hits + 1}\n` +
+                `→ Có thể fake submit. Review thủ công.`,
+            ).catch((e) => logger.warn({ err: e.message }, 'duplicate alert failed'));
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: err.message }, 'duplicate check failed');
+      }
     } else {
       recordMetric('cache_miss');
     }
@@ -471,6 +512,35 @@ export async function handleImageSubmission({
     fallbackLng: gpsLongitude,
     fallbackAddress: gpsAddress,
   });
+
+  // Phase D.3: Fuera-de-zona check — nếu submission GPS xa branch HQ > radius → flag needs_review
+  let outOfZone = false;
+  let outOfZoneKm = null;
+  if (gps.lat != null && gps.lng != null && campaign.branchId) {
+    try {
+      const branch = await prisma.branch.findUnique({
+        where: { id: campaign.branchId },
+        select: { gpsLatitude: true, gpsLongitude: true, gpsRadiusKm: true, code: true },
+      });
+      if (branch && branch.gpsLatitude != null && branch.gpsLongitude != null) {
+        const dist = haversineKm(gps.lat, gps.lng, branch.gpsLatitude, branch.gpsLongitude);
+        if (dist > branch.gpsRadiusKm) {
+          outOfZone = true;
+          outOfZoneKm = Math.round(dist * 10) / 10;
+          evaluationResult = 'needs_review';
+          logger.warn(
+            { branch: branch.code, dist: outOfZoneKm, radius: branch.gpsRadiusKm },
+            'Submission FUERA-DE-ZONA — routed to needs_review',
+          );
+          // Append warning vào feedback
+          evaluation.feedback_for_user = `⚠️ GPS xa branch HQ ${outOfZoneKm} km (max ${branch.gpsRadiusKm} km). ${evaluation.feedback_for_user || ''}`;
+        }
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'fuera-de-zona check failed');
+    }
+  }
+
   const sub = await insertSubmission({
     ...buildBaseSubmission({
       leaderId: leader.id,
@@ -493,6 +563,8 @@ export async function handleImageSubmission({
     aiFeedback: evaluation.feedback_for_user,
     aiRawResponse: JSON.stringify(evaluation),
     visionCached: !!cachedEval,
+    outOfZone,
+    outOfZoneKm,
   });
 
   // Phase B.1: Tạo SubmissionImage row cho primary image + mark active để multi-image attach sau

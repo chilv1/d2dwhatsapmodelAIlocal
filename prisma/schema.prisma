@@ -20,6 +20,10 @@ model Branch {
   code      String   @unique
   name      String
   region    String?
+  // Phase D.3: GPS HQ + radius cho fuera-de-zona validation
+  gpsLatitude   Float?  @map("gps_latitude")
+  gpsLongitude  Float?  @map("gps_longitude")
+  gpsRadiusKm   Int     @default(5) @map("gps_radius_km")
   createdAt DateTime @default(now()) @map("created_at")
 
   teamLeaders            TeamLeader[]
@@ -122,6 +126,11 @@ model Submission {
   qualityFailed         Boolean   @default(false) @map("quality_failed")
   qualityFailReason     String?   @map("quality_fail_reason")
   firstReviewedAt       DateTime? @map("first_reviewed_at")
+
+  // Phase D — monitoring flags
+  outOfZone             Boolean   @default(false) @map("out_of_zone")        // GPS xa branch HQ
+  outOfZoneKm           Float?    @map("out_of_zone_km")                     // distance khi flag
+  escalationAlertedAt   DateTime? @map("escalation_alerted_at")              // timestamp khi alert stuck
 
   teamLeader        TeamLeader?         @relation(fields: [teamLeaderId], references: [id])
   campaign          Campaign?           @relation(fields: [campaignId], references: [id])

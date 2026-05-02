@@ -20,6 +20,7 @@ import {
   ScrollText,
   Cpu,
   Trophy,
+  Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
   { href: '/dashboard/users', label: 'Users + RBAC', icon: UserCog, adminOnly: true },
   { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText, adminOnly: true },
+  { href: '/dashboard/branches', label: 'Branches', icon: Building2, adminOnly: true },
   { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, adminOnly: true },
   { href: '/dashboard/config-ai', label: 'Config AI', icon: Cpu, adminOnly: true },
 ];
