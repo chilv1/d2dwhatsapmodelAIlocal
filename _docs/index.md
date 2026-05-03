@@ -26,12 +26,14 @@ _docs/
 - [[decisions/0001-monorepo-shared-prisma]] — bot/ + crm/ workspace, Prisma là single source of truth
 - [[decisions/0002-nextauth-edge-node-split]] — auth.config (edge) vs auth.ts (node) split
 - [[decisions/0003-vision-cache-sha256]] — Cache vision result, 1300× speedup
+- [[decisions/0004-template-as-text-vision]] — Vision v2: text mô tả thay template image, -20% tokens, -35% latency
 
 ## 🛠 Runbooks
 
 - [[runbooks/clone-fresh-setup]] — Setup từ git clone (fix env paths, migrate, seed)
 - [[runbooks/restore-db-from-backup]] — Switch giữa DB sandbox và production
 - [[runbooks/screenshot-crm]] — Test CRM bằng Puppeteer + screenshot
+- [[runbooks/regenerate-template-description]] — Regenerate template text khi đổi ảnh template (Vision v2)
 
 ## 📍 Context
 

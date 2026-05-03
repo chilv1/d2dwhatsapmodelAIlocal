@@ -17,11 +17,21 @@ tags: [context]
 ## Bản clone hiện tại (`/Users/chilevan/Desktop/CRMREPORTD2DWHATSAPP/`)
 
 - Cloned từ project gốc `CTYAI` (folder cũ)
-- 2 remote: `origin` (chilv1/reportcampaignwhatsapp) + `d2d` (chilv1/d2dwhatsapmodelAIlocal)
+- Remote: `origin` → `chilv1/d2dwhatsapmodelAIlocal` (single remote, sync với production)
 - Branch chính: `main`
 - DB hiện tại: **sandbox** (1 user admin, không campaign/submission). DB production preserved ở `data/telecombig.db.production`.
 
-## Recent fixes (commit 758dc70 — 2026-05-02)
+## Recent commits (verify với `git log --oneline | head`)
+
+**1edf63b (2026-05-02) — feat: Vision v2 template-as-text**
+- 20 files, +1309/-75 lines
+- 2 migrations mới (`add_template_description`, `add_template_mode_to_vision_cache`)
+- Bot: `generateTemplateDescription()`, refactor `evaluateSubmissionImage()` cho text mode + prompt-cache-friendly message order
+- CRM: button auto-generate trên campaign edit, toggle + Vision v2 stats card trên `/dashboard/config-ai`
+- Token tracking per mode (`vision_tokens_input_{image,text}`)
+- Push: `origin/main` (`d2dwhatsapmodelAIlocal`)
+
+**758dc70 (2026-05-02) — fix: typecheck + Next.js 16 deprecations**
 - 21 lỗi TypeScript CRM (NextAuth v5 overload broken) → fix bằng `import 'next-auth/jwt'` + import `Session` từ `next-auth`
 - `middleware.ts` → `proxy.ts` (Next.js 16 deprecation)
 - `devIndicators` chuyển sang bottom-right (đã đụng "Đăng xuất" trong sidebar)

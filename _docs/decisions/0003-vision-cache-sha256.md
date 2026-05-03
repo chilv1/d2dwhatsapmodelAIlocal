@@ -36,7 +36,13 @@ Detection mode (Hướng 1 vs Hướng 2) cache RIÊNG vì prompt khác nhau.
 - **Perceptual hash (pHash)**: bị loại vì AI eval quan tâm chi tiết, không nên fuzzy match
 - **No cache**: bị loại vì cost + latency
 
+## Update 2026-05-02 (Vision v2)
+
+Cache key bổ sung `templateMode` ('image'|'text') trong ADR [[0004-template-as-text-vision]]
+→ 2 modes không trộn cache. Model invalidation TODO ở trên vẫn còn.
+
 ## References
 - `bot/src/cache.js` — cache implementation
-- `prisma/schema.prisma:303-317` — VisionCache model
+- `prisma/schema.prisma` — VisionCache model
 - `bot/src/vision.js` — call site
+- [[0004-template-as-text-vision]] — Vision v2 thêm `templateMode` vào cache key
