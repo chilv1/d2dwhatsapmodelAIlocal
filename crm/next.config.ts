@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
         'ovjvi3pniekcrw-3001.proxy.runpod.net',
         '*.proxy.runpod.net',
       ],
+      bodySizeLimit: '10mb',
     },
   },
 };
