@@ -489,21 +489,24 @@ export async function handleImageSubmission({
   // Gọi OpenAI vision (hoặc dùng cache)
   let evaluation;
   let userMessage;
+  let cachedComparePath = cachedEval?.compareImagePath || null;
   try {
     if (parsed.type === 'campaign_start') {
-      evaluation = cachedEval || await evaluateSubmissionImage({
-        submissionImagePath: imagePath,
-        templateImagePath: campaign.templateImagePath,
-        campaignName: campaign.name,
-        campaignRequirements: campaign.templateRequirements,
-        requirementsJson: campaign.requirementsJson,
-      });
+      evaluation = cachedEval
+        ? cachedEval.evaluation
+        : await evaluateSubmissionImage({
+            submissionImagePath: imagePath,
+            templateImagePath: campaign.templateImagePath,
+            campaignName: campaign.name,
+            campaignRequirements: campaign.templateRequirements,
+            requirementsJson: campaign.requirementsJson,
+          });
       userMessage = formatStartReply(campaign, evaluation);
     } else {
       let endResult;
       if (cachedEval) {
         // Cached evaluation + tự build summary với reportedSubs (vì summary phụ thuộc subs)
-        evaluation = cachedEval;
+        evaluation = cachedEval.evaluation;
         const achieved = parsed.subs >= campaign.targetSubscribers;
         const pct = campaign.targetSubscribers ? (parsed.subs / campaign.targetSubscribers) * 100 : 0;
         const status = achieved && evaluation.meets_standard
@@ -663,21 +666,50 @@ export async function handleImageSubmission({
 
   // Side-by-side compare image: chỉ gửi khi START + ảnh KHÔNG ĐẠT chuẩn,
   // để promotor thấy trực quan template vs ảnh mình → sửa nhanh hơn.
+  // Reuse cached compare image nếu có (cache HIT + file còn trên disk) để skip compose.
+  // Bbox overlay được toggle qua setting `vision.bbox_enabled`.
   let mediaPath = null;
   if (parsed.type === 'campaign_start' && !evaluation.meets_standard) {
-    try {
-      const filename = `compare_${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
-      const outPath = join(config.uploadDir, filename);
-      await composeComparison({
-        templatePath: campaign.templateImagePath,
-        userPath: imagePath,
-        outputPath: outPath,
-      });
-      mediaPath = outPath;
-      logger.info({ submissionId: sub.id, mediaPath }, 'compose comparison ok');
-    } catch (err) {
-      logger.warn({ err: err.message, submissionId: sub.id }, 'compose comparison failed — text only');
+    if (cachedComparePath && existsSync(cachedComparePath)) {
+      mediaPath = cachedComparePath;
+      logger.info({ submissionId: sub.id, mediaPath }, 'compose cache HIT — reuse');
+    } else {
+      try {
+        const bboxEnabled = (await getSetting('vision.bbox_enabled', '0')) === '1';
+        const issueBoxes = bboxEnabled && Array.isArray(evaluation.issue_boxes)
+          ? evaluation.issue_boxes
+          : [];
+        const filename = `compare_${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
+        const outPath = join(config.uploadDir, filename);
+        await composeComparison({
+          templatePath: campaign.templateImagePath,
+          userPath: imagePath,
+          outputPath: outPath,
+          issueBoxes,
+        });
+        mediaPath = outPath;
+        logger.info({ submissionId: sub.id, mediaPath, boxes: issueBoxes.length }, 'compose comparison ok');
+        // Persist vào VisionCache để re-submit cùng ảnh + cùng campaign reuse được
+        if (cacheEnabled) {
+          await setCachedEvaluation({
+            imageHash: hash,
+            campaignId: campaign.id,
+            detectionMode,
+            evaluation,
+            compareImagePath: outPath,
+          });
+        }
+      } catch (err) {
+        logger.warn({ err: err.message, submissionId: sub.id }, 'compose comparison failed — text only');
+      }
     }
+  }
+
+  // Persist compareImagePath vào Submission row để CRM admin xem audit
+  if (mediaPath) {
+    prisma.submission
+      .update({ where: { id: sub.id }, data: { compareImagePath: mediaPath } })
+      .catch((err) => logger.warn({ err: err.message }, 'persist compareImagePath failed'));
   }
 
   if (parsed.type === 'campaign_end') {
@@ -708,7 +740,11 @@ function formatStartReply(campaign, ev) {
       campaign.targetSubscribers,
     );
   }
-  const issues = (ev.issues || []).slice(0, 3).map((i) => `• ${i}`).join('\n');
+  // Numbered list để match với numbered boxes trên ảnh compare. Cap 5 (giống issue_boxes).
+  const issues = (ev.issues || [])
+    .slice(0, 5)
+    .map((i, idx) => `${idx + 1}. ${i}`)
+    .join('\n');
   const firstStartKw = getKeywords(campaign.startKeywords, DEFAULT_START_KEYWORDS)[0];
   return ES.START_REPLY_FAIL(
     campaign.name,

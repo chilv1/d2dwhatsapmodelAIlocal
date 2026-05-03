@@ -30,7 +30,7 @@ import { overrideSubmissionAction, deleteSubmissionAction, addCommentAction, del
 import { assignPromotorToSubmissionAction } from '@/lib/actions/promotor';
 import { DeleteSubmissionButton } from '@/components/delete-submission-button';
 import { CommentForm } from '@/components/comment-form';
-import { MessageSquare, History, Image as ImageIcon } from 'lucide-react';
+import { MessageSquare, History, Image as ImageIcon, Layers } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +43,7 @@ type AIRaw = {
   issues: string[];
   feedback_for_user: string;
   needs_resubmit: boolean;
+  issue_boxes?: { label: string; x: number; y: number; w: number; h: number }[];
 };
 
 export default async function SubmissionDetailPage({ params }: { params: Params }) {
@@ -235,6 +236,32 @@ export default async function SubmissionDetailPage({ params }: { params: Params 
           </CardContent>
         </Card>
       </div>
+
+      {/* Compare image (bot tự compose khi START fail) */}
+      {sub.compareImagePath && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Layers className="h-4 w-4" />
+              So sánh đã gửi cho promotor
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Ảnh side-by-side bot tự compose khi vision đánh giá KHÔNG ĐẠT.
+              {aiRaw?.issue_boxes && aiRaw.issue_boxes.length > 0 && (
+                <> Vùng đỏ + số = vị trí AI nhận định thiếu item ({aiRaw.issue_boxes.length} box).</>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={fileUrl(sub.compareImagePath)!}
+              alt="Compare image"
+              className="w-full max-w-3xl rounded border bg-muted/30"
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* AI evaluation */}
       <Card>

@@ -37,6 +37,7 @@ export function imageHash(filePathOrBuffer) {
 
 /**
  * Lookup cached evaluation. Returns null nếu miss hoặc cache disabled.
+ * @returns {Promise<{evaluation:object, compareImagePath:string|null}|null>}
  */
 export async function getCachedEvaluation({ imageHash, campaignId, detectionMode }) {
   try {
@@ -57,7 +58,10 @@ export async function getCachedEvaluation({ imageHash, campaignId, detectionMode
         data: { hits: { increment: 1 }, lastHitAt: new Date() },
       })
       .catch((e) => logger.warn({ err: e.message }, 'cache hit update failed'));
-    return JSON.parse(row.evaluationJson);
+    return {
+      evaluation: JSON.parse(row.evaluationJson),
+      compareImagePath: row.compareImagePath || null,
+    };
   } catch (err) {
     logger.warn({ err: err.message }, 'getCachedEvaluation failed');
     return null;
@@ -66,12 +70,14 @@ export async function getCachedEvaluation({ imageHash, campaignId, detectionMode
 
 /**
  * Lưu evaluation vào cache. Idempotent (dùng upsert).
+ * compareImagePath optional — chỉ set khi compose thành công.
  */
 export async function setCachedEvaluation({
   imageHash,
   campaignId,
   detectionMode,
   evaluation,
+  compareImagePath = null,
 }) {
   try {
     await prisma.visionCache.upsert({
@@ -82,12 +88,16 @@ export async function setCachedEvaluation({
           detectionMode: !!detectionMode,
         },
       },
-      update: { evaluationJson: JSON.stringify(evaluation) },
+      update: {
+        evaluationJson: JSON.stringify(evaluation),
+        ...(compareImagePath ? { compareImagePath } : {}),
+      },
       create: {
         imageHash,
         campaignId,
         detectionMode: !!detectionMode,
         evaluationJson: JSON.stringify(evaluation),
+        compareImagePath,
       },
     });
   } catch (err) {

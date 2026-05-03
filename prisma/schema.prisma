@@ -135,6 +135,10 @@ model Submission {
   outOfZoneKm           Float?    @map("out_of_zone_km")                     // distance khi flag
   escalationAlertedAt   DateTime? @map("escalation_alerted_at")              // timestamp khi alert stuck
 
+  // Compare image v2 — side-by-side template vs user (+ optional bbox overlay)
+  // gửi cho promotor khi START fail. Lưu path để CRM admin xem audit AI feedback.
+  compareImagePath      String?   @map("compare_image_path")
+
   teamLeader        TeamLeader?         @relation(fields: [teamLeaderId], references: [id])
   campaign          Campaign?           @relation(fields: [campaignId], references: [id])
   promotor          Promotor?           @relation(fields: [promotorId], references: [id])
@@ -305,6 +309,7 @@ model VisionCache {
   hits            Int       @default(0)                 // analytics
   createdAt       DateTime  @default(now()) @map("created_at")
   lastHitAt       DateTime? @map("last_hit_at")
+  compareImagePath String?  @map("compare_image_path")   // reuse compose result khi cache HIT
 
   @@unique([imageHash, campaignId, detectionMode], name: "uq_vision_cache")
   @@index([campaignId])
