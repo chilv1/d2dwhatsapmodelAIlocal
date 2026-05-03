@@ -41,5 +41,10 @@ crm/next-env.d.ts
 .idea/
 .claude/
 
+# ── Obsidian — commit shared config, ignore per-user state ──
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+
 # ── Project archives ──
 _archive_python/
