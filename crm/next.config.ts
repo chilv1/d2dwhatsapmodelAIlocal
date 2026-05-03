@@ -1,10 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Dev indicator (icon "N" góc màn hình) mặc định bottom-left → đụng "Đăng xuất" trong sidebar.
-  // Chuyển sang bottom-right để không che layout.
   devIndicators: {
     position: 'bottom-right',
+  },
+  experimental: {
+    serverActions: {
+      allowedOrigins: [
+        'ovjvi3pniekcrw-3001.proxy.runpod.net',
+        '*.proxy.runpod.net',
+      ],
+    },
   },
 };
 
