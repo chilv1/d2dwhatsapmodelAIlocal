@@ -15,9 +15,11 @@ data/uploads/*
 data/templates/*
 data/wa-session/
 data/*.db
+data/*.db.*
 data/*.db-journal
 data/*.db-shm
 data/*.db-wal
+prisma/data/
 data/qr.png
 data/*.png
 data/backups/

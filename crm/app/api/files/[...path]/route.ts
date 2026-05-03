@@ -15,9 +15,10 @@ import { auth } from '@/auth';
 // Resolve data directory:
 // 1. env DATA_DIR (production set explicit, vd /opt/telecombig/data)
 // 2. cwd-based fallback: nếu chạy từ crm/ → ../data, else ./data
+// turbopackIgnore: dynamic cwd lookup — tránh Turbopack trace toàn project vào bundle.
 function getDataDir(): string {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
-  const cwd = process.cwd();
+  const cwd = /*turbopackIgnore: true*/ process.cwd();
   const root = cwd.endsWith('/crm') ? resolve(cwd, '..') : cwd;
   return resolve(root, 'data');
 }

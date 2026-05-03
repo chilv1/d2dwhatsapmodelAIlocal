@@ -6,10 +6,11 @@
  *   - viewer          : read-only mọi data, không tạo/sửa/xoá
  */
 import { redirect } from 'next/navigation';
+import type { Session } from 'next-auth';
 import { auth } from '@/auth';
 
 export type Role = 'admin' | 'branch_manager' | 'viewer';
-export type Session = NonNullable<Awaited<ReturnType<typeof auth>>>;
+export type { Session };
 
 export const ROLES: Role[] = ['admin', 'branch_manager', 'viewer'];
 

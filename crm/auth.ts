@@ -4,6 +4,7 @@
  * Middleware/proxy KHÔNG được import — dùng auth.config.ts.
  */
 import NextAuth, { type DefaultSession } from 'next-auth';
+import 'next-auth/jwt';
 import Credentials from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import authConfig from './auth.config';

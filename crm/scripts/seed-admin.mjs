@@ -12,7 +12,10 @@ import { dirname } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
-process.env.DATABASE_URL = `file:${PROJECT_ROOT}/data/telecombig.db`;
+// Respect DATABASE_URL nếu đã set (vd qua .env), fallback PROJECT_ROOT.
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = `file:${PROJECT_ROOT}/data/telecombig.db`;
+}
 
 const prisma = new PrismaClient();
 
