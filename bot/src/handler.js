@@ -700,6 +700,9 @@ export async function handleImageSubmission({
         const issueBoxes = bboxEnabled && Array.isArray(evaluation.issue_boxes)
           ? evaluation.issue_boxes
           : [];
+        const templateHighlightBoxes = bboxEnabled && Array.isArray(evaluation.template_highlight_boxes)
+          ? evaluation.template_highlight_boxes
+          : [];
         const filename = `compare_${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
         const outPath = join(config.uploadDir, filename);
         await composeComparison({
@@ -707,9 +710,10 @@ export async function handleImageSubmission({
           userPath: imagePath,
           outputPath: outPath,
           issueBoxes,
+          templateHighlightBoxes,
         });
         mediaPath = outPath;
-        logger.info({ submissionId: sub.id, mediaPath, boxes: issueBoxes.length }, 'compose comparison ok');
+        logger.info({ submissionId: sub.id, mediaPath, boxes: issueBoxes.length, tplBoxes: templateHighlightBoxes.length }, 'compose comparison ok');
         // Persist vào VisionCache để re-submit cùng ảnh + cùng campaign reuse được
         if (cacheEnabled) {
           await setCachedEvaluation({

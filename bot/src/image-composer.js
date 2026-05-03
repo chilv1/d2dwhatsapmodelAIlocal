@@ -40,17 +40,26 @@ function buildBoxesSvg(boxes, w, h) {
  * @param {string} args.userPath
  * @param {string} args.outputPath
  * @param {Array<{x:number,y:number,w:number,h:number}>} [args.issueBoxes]
+ * @param {Array<{x:number,y:number,w:number,h:number}>} [args.templateHighlightBoxes]
  */
 export async function composeComparison({
   templatePath,
   userPath,
   outputPath,
   issueBoxes = [],
+  templateHighlightBoxes = [],
 }) {
-  // Resize template — giữ nguyên (không có annotation)
-  const tplBuf = await sharp(templatePath)
+  // Resize template — overlay red boxes nếu có
+  let tplBuf = await sharp(templatePath)
     .resize(TARGET_W, TARGET_H, { fit: 'contain', background: '#ffffff' })
     .toBuffer();
+
+  if (templateHighlightBoxes.length > 0) {
+    const overlaySvg = Buffer.from(buildBoxesSvg(templateHighlightBoxes, TARGET_W, TARGET_H));
+    tplBuf = await sharp(tplBuf)
+      .composite([{ input: overlaySvg, left: 0, top: 0 }])
+      .toBuffer();
+  }
 
   // Resize user — composite bbox overlay nếu có
   let usrBuf = await sharp(userPath)

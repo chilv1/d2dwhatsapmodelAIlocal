@@ -157,7 +157,27 @@ const EVALUATION_SCHEMA = {
       description:
         'Bounding boxes (normalized 0-1, top-left origin) chỉ vị trí TRÊN ẢNH 2 (user image) ' +
         'nơi missing item NÊN có. Mỗi entry có "label" map với 1 string trong "issues". ' +
-        'Để mảng RỖNG nếu không xác định chắc chắn vị trí — KHÔNG đoán bừa.',
+        'Để mảng RỖNG nếu không xác định vị trí.',
+      items: {
+        type: 'object',
+        properties: {
+          label: { type: 'string' },
+          x: { type: 'number', minimum: 0, maximum: 1 },
+          y: { type: 'number', minimum: 0, maximum: 1 },
+          w: { type: 'number', minimum: 0, maximum: 1 },
+          h: { type: 'number', minimum: 0, maximum: 1 },
+        },
+        required: ['label', 'x', 'y', 'w', 'h'],
+        additionalProperties: false,
+      },
+    },
+    template_highlight_boxes: {
+      type: 'array',
+      description:
+        'Bounding boxes (normalized 0-1, top-left origin) trên ẢNH 1 (TEMPLATE) chỉ vị trí ' +
+        'các item có trong "issues". Dùng để highlight cho team leader thấy item nào đang thiếu trông ' +
+        'như thế nào trong template. label PHẢI khớp CHÍNH XÁC với 1 string trong "issues". ' +
+        'PHẢI cố gắng tìm — item trong template luôn tồn tại khi có issues.',
       items: {
         type: 'object',
         properties: {
@@ -181,6 +201,7 @@ const EVALUATION_SCHEMA = {
     'feedback_for_user',
     'needs_resubmit',
     'issue_boxes',
+    'template_highlight_boxes',
   ],
   additionalProperties: false,
 };
@@ -204,6 +225,8 @@ C. KHÔNG suy diễn: thấy số "79.90" trên 1 banner khuyến mãi 50% dscto
 D. matches và feedback PHẢI nhất quán: nếu "Standee X" trong matches thì feedback KHÔNG được nói "Falta Standee X".
 
 E. issue_boxes (BBOX OVERLAY): với MỖI item trong "issues", nếu xác định ĐƯỢC vị trí TRÊN ẢNH 2 nơi item NÊN có (vd: vùng tường trống nơi standee thiếu, khu vực promotor không có biển hiệu) → thêm 1 entry { label, x, y, w, h } với toạ độ NORMALIZED 0-1 (gốc top-left, trục y xuống). label phải KHỚP CHÍNH XÁC với 1 string trong "issues". KHÔNG ĐOÁN BỪA — nếu không chắc vị trí thì BỎ QUA item đó (issue_boxes có thể có ít entry hơn issues, hoặc rỗng []). Box sai còn tệ hơn không có box.
+
+F. template_highlight_boxes (BBOX TEMPLATE): với MỖI item trong "issues", TÌM item đó trong ẢNH 1 (TEMPLATE) và thêm 1 entry { label, x, y, w, h } để highlight vị trí item đó trong template. Mục đích: cho team leader thấy item thiếu TRÔNG NHƯ THẾ NÀO và NẰM Ở ĐÂU trong template chuẩn. label PHẢI khớp CHÍNH XÁC với 1 string trong "issues". Item trong template LUÔN TỒN TẠI khi có issues — PHẢI cố gắng tìm và ghi bbox. Nếu không có template image (text mode) thì để []. Toạ độ NORMALIZED 0-1 (gốc top-left).
 
 CÔNG THỨC TÍNH similarity_score (0–100) — BẮT BUỘC TUÂN THỦ:
 
@@ -391,7 +414,6 @@ async function runDetectionMode({
       json_schema: {
         name: 'detection_result',
         schema: DETECTION_SCHEMA,
-        strict: true,
       },
     },
     messages: [
@@ -601,7 +623,6 @@ export async function generateTemplateDescription({
       json_schema: {
         name: 'template_description',
         schema: TEMPLATE_DESCRIPTION_SCHEMA,
-        strict: true,
       },
     },
     messages: [
@@ -712,7 +733,6 @@ export async function evaluateSubmissionImage({
       json_schema: {
         name: 'image_evaluation',
         schema: EVALUATION_SCHEMA,
-        strict: true,
       },
     },
     messages: [
@@ -724,6 +744,9 @@ export async function evaluateSubmissionImage({
   const content = response.choices[0].message.content;
   const parsed = JSON.parse(content);
   parsed.issue_boxes = sanitizeIssueBoxes(parsed.issue_boxes, parsed.issues);
+  parsed.template_highlight_boxes = useTextMode
+    ? []
+    : sanitizeIssueBoxes(parsed.template_highlight_boxes, parsed.issues);
   parsed._templateMode = useTextMode ? 'text' : 'image';
   parsed._usage = response.usage || null;
   return parsed;
