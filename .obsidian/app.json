@@ -3,5 +3,11 @@
   "newLinkFormat": "relative",
   "useMarkdownLinks": false,
   "alwaysUpdateLinks": true,
-  "showInlineTitle": true
+  "showInlineTitle": true,
+  "userIgnoreFilters": [
+    "node_modules/",
+    "_archive_python/",
+    "data/",
+    "crm/.next/"
+  ]
 }

@@ -45,6 +45,7 @@ crm/next-env.d.ts
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/cache
+.obsidian/graph.json
 
 # ── Project archives ──
 _archive_python/
