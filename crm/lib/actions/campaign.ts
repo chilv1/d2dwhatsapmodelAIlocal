@@ -158,6 +158,13 @@ export async function updateCampaignAction(formData: FormData) {
   const requirementsJson = parseRequirementsJson(
     String(formData.get('requirements_json') || ''),
   );
+  // Vision v2 — text mô tả template (admin edit/AI-generated)
+  const templateDescriptionRaw = String(
+    formData.get('template_description') || '',
+  ).trim();
+  const templateDescription = templateDescriptionRaw || null;
+  // Mark generatedAt khi description thay đổi từ giá trị cũ
+  const descChanged = templateDescription !== cur.templateDescription;
   const startKeywords = parseKeywordsField(String(formData.get('start_keywords') || ''));
   const endKeywords = parseKeywordsField(String(formData.get('end_keywords') || ''));
   const targetSubscribers = parseInt(
@@ -197,6 +204,7 @@ export async function updateCampaignAction(formData: FormData) {
     endKeywords: cur.endKeywords,
     alertThreshold: cur.alertThreshold,
     templateImagePath: cur.templateImagePath,
+    templateDescription: cur.templateDescription,
   };
 
   const newVal = {
@@ -210,6 +218,10 @@ export async function updateCampaignAction(formData: FormData) {
     branchId,
     alertThreshold,
     templateImagePath,
+    templateDescription,
+    ...(descChanged && templateDescription
+      ? { templateDescriptionGeneratedAt: new Date() }
+      : {}),
   };
 
   await prisma.campaign.update({ where: { id }, data: newVal });

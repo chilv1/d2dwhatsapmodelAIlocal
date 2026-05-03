@@ -439,9 +439,16 @@ export async function handleImageSubmission({
     return { reply: msg, submission: sub };
   }
 
-  // Vision cache lookup (cùng image hash + cùng campaign + cùng detection mode)
+  // Vision cache lookup (cùng image hash + cùng campaign + cùng detection mode + cùng template mode)
   const cacheEnabled = (await getSetting('vision.cache_enabled', '0')) === '1';
   const detectionMode = (await getSetting('vision.detection_mode_enabled', '0')) === '1';
+  // v2: text mode active khi campaign có description + global flag ON
+  const templateAsTextEnabled =
+    (await getSetting('vision.template_as_text_enabled', '1')) === '1';
+  const templateMode =
+    templateAsTextEnabled && campaign.templateDescription && campaign.templateDescription.trim()
+      ? 'text'
+      : 'image';
   const hash = imageHash(imagePath);
   let cachedEval = null;
   if (cacheEnabled) {
@@ -449,6 +456,7 @@ export async function handleImageSubmission({
       imageHash: hash,
       campaignId: campaign.id,
       detectionMode,
+      templateMode,
     });
     if (cachedEval) {
       logger.info({ hash: hash.slice(0, 12), campaign: campaign.code }, 'Vision cache HIT — skip API call');
@@ -500,6 +508,7 @@ export async function handleImageSubmission({
             campaignName: campaign.name,
             campaignRequirements: campaign.templateRequirements,
             requirementsJson: campaign.requirementsJson,
+            templateDescription: campaign.templateDescription,
           });
       userMessage = formatStartReply(campaign, evaluation);
     } else {
@@ -532,6 +541,7 @@ export async function handleImageSubmission({
           campaignName: campaign.name,
           campaignRequirements: campaign.templateRequirements,
           requirementsJson: campaign.requirementsJson,
+          templateDescription: campaign.templateDescription,
           reportedSubscribers: parsed.subs,
           targetSubscribers: campaign.targetSubscribers,
         });
@@ -545,8 +555,19 @@ export async function handleImageSubmission({
         imageHash: hash,
         campaignId: campaign.id,
         detectionMode,
+        templateMode,
         evaluation,
       });
+    }
+    // v2 observability: track tokens per mode để dashboard tính saving thực tế
+    if (!cachedEval && evaluation?._usage) {
+      const u = evaluation._usage;
+      const mode = evaluation._templateMode || templateMode; // fallback
+      Promise.all([
+        recordMetric(`vision_tokens_input_${mode}`, u.prompt_tokens || 0),
+        recordMetric(`vision_tokens_output_${mode}`, u.completion_tokens || 0),
+        recordMetric(`vision_calls_${mode}`),
+      ]).catch((e) => logger.warn({ err: e.message }, 'token metrics failed'));
     }
   } catch (err) {
     logger.error({ err: err.message }, 'OpenAI vision call failed');
@@ -695,6 +716,7 @@ export async function handleImageSubmission({
             imageHash: hash,
             campaignId: campaign.id,
             detectionMode,
+            templateMode,
             evaluation,
             compareImagePath: outPath,
           });

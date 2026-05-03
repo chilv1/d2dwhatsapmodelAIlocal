@@ -355,24 +355,32 @@ function computeScoreFromDetections({
 /**
  * Detection-only mode: AI returns per-item found/not-found + confidence,
  * code computes score via formula.
+ *
+ * v2: nếu templateDescription truyền vào + text mode active → bỏ template image,
+ * chỉ gửi description text (~50% token saving). Ngược lại fallback image mode.
  */
 async function runDetectionMode({
   submissionUrl,
   templateUrl,
+  templateDescription,
   campaignName,
   structured,
   requirementsJson,
+  useTextMode,
 }) {
-  const userText =
-    `Campaign: **${campaignName}**\n\n` +
-    `═══════════════════════════════════════\n` +
-    `CHECKLIST:\n` +
-    `═══════════════════════════════════════\n` +
-    `${structured}\n` +
-    `═══════════════════════════════════════\n\n` +
-    'Ảnh 1 = TEMPLATE (chỉ tham khảo phong cách).\n' +
-    'Ảnh 2 = ảnh hiện trường (cần detect).\n\n' +
-    'Trả về detections cho TỪNG item trong CHECKLIST theo schema.';
+  const userContent = buildUserContent({
+    submissionUrl,
+    templateUrl,
+    templateDescription,
+    campaignName,
+    requirementsBlock: structured,
+    requirementsHeading: 'CHECKLIST',
+    instructions:
+      'Trả về detections cho TỪNG item trong CHECKLIST theo schema. ' +
+      'Nếu thấy item rõ ràng trong ẢNH HIỆN TRƯỜNG → found=true, confidence=high. ' +
+      'Mơ hồ → confidence=medium/low.',
+    useTextMode,
+  });
 
   const response = await openai.chat.completions.create({
     model: await getActiveVisionModel(),
@@ -388,16 +396,7 @@ async function runDetectionMode({
     },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_DETECTION },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: '**Ảnh 1 — TEMPLATE:**' },
-          { type: 'image_url', image_url: { url: templateUrl, detail: 'high' } },
-          { type: 'text', text: '**Ảnh 2 — ảnh hiện trường:**' },
-          { type: 'image_url', image_url: { url: submissionUrl, detail: 'high' } },
-          { type: 'text', text: userText },
-        ],
-      },
+      { role: 'user', content: userContent },
     ],
   });
 
@@ -419,7 +418,217 @@ async function runDetectionMode({
     gps: parsed.gps || null,
     _detections: computed._detections,
     _image_quality: computed._image_quality,
+    _templateMode: useTextMode ? 'text' : 'image',
+    _usage: response.usage || null,
   };
+}
+
+// ──────────────── Vision v2: shared message builder + text mode ────────────────
+// Cấu trúc messages tối ưu cho OpenAI prompt caching:
+// - System prompt đứng đầu (cached, không đổi giữa calls)
+// - User content[] có cacheable prefix (per-campaign) trước, variable suffix (user image) cuối
+// - OpenAI tự cache prefix > 1024 tokens trong ~5 phút → giảm 50% input cost cho cached portion
+
+/**
+ * Build user message content array.
+ *
+ * @param {object} args
+ * @param {string} args.submissionUrl — data URL của ảnh user (luôn ở cuối, KHÔNG cached)
+ * @param {string|null} args.templateUrl — data URL template (chỉ dùng khi !useTextMode)
+ * @param {string|null} args.templateDescription — text mô tả template (chỉ dùng khi useTextMode)
+ * @param {string} args.campaignName
+ * @param {string} args.requirementsBlock — checklist text hoặc requirements text
+ * @param {string} args.requirementsHeading — vd 'CHECKLIST' hoặc 'YÊU CẦU CỤ THỂ'
+ * @param {string} args.instructions — text hướng dẫn cuối block
+ * @param {boolean} args.useTextMode — true = bỏ template image, dùng description
+ * @returns {Array} OpenAI content array
+ */
+function buildUserContent({
+  submissionUrl,
+  templateUrl,
+  templateDescription,
+  campaignName,
+  requirementsBlock,
+  requirementsHeading,
+  instructions,
+  useTextMode,
+}) {
+  const sep = '═══════════════════════════════════════';
+
+  const cacheablePrefix = [];
+
+  // Block 1: campaign + checklist (cacheable per-campaign)
+  cacheablePrefix.push({
+    type: 'text',
+    text:
+      `Campaign: **${campaignName}**\n\n` +
+      `${sep}\n${requirementsHeading}:\n${sep}\n${requirementsBlock}\n${sep}`,
+  });
+
+  // Block 2: template — text hoặc image
+  if (useTextMode) {
+    cacheablePrefix.push({
+      type: 'text',
+      text:
+        `\n📋 TEMPLATE DESCRIPTION (text thay cho image — Vision v2):\n${sep}\n` +
+        `${templateDescription}\n${sep}\n` +
+        `Dùng description trên làm GROUND TRUTH cho template. Không có ảnh template trong call này.`,
+    });
+  } else {
+    cacheablePrefix.push({ type: 'text', text: '\n**Ảnh TEMPLATE chuẩn:**' });
+    cacheablePrefix.push({
+      type: 'image_url',
+      image_url: { url: templateUrl, detail: 'high' },
+    });
+  }
+
+  // Block 3: instructions (cacheable)
+  cacheablePrefix.push({
+    type: 'text',
+    text: `\n${instructions}`,
+  });
+
+  // Block 4 (LAST — variable per submission, NOT cached):
+  cacheablePrefix.push({
+    type: 'text',
+    text: '\n**📸 ẢNH HIỆN TRƯỜNG (team leader vừa gửi):**',
+  });
+  cacheablePrefix.push({
+    type: 'image_url',
+    image_url: { url: submissionUrl, detail: 'high' },
+  });
+
+  return cacheablePrefix;
+}
+
+/**
+ * Quyết định text mode có nên active không.
+ * Điều kiện: templateDescription tồn tại + setting `vision.template_as_text_enabled` = '1'.
+ */
+async function shouldUseTextMode(templateDescription) {
+  if (!templateDescription || !templateDescription.trim()) return false;
+  const enabled = await getSetting('vision.template_as_text_enabled', '1');
+  return enabled === '1';
+}
+
+// ──────────────── Vision v2: Template description generation ────────────────
+// 1-time call khi admin upload template. Generate text description + suggested
+// requirements checklist. Admin review/edit trước khi save → lock vào DB.
+// Runtime compare sẽ dùng text này thay vì gửi template image (~50% token saving).
+
+const TEMPLATE_DESCRIPTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    description: {
+      type: 'string',
+      description:
+        'Mô tả CHI TIẾT template — đủ để 1 AI vision khác có thể hình dung mà không cần thấy ảnh. ' +
+        'Bao gồm: tổng quan bố cục, từng visual element (vị trí, màu, kích thước, text), background, ' +
+        'phong cách ánh sáng. Tiếng Việt, 200-500 chữ.',
+    },
+    suggested_requirements: {
+      type: 'array',
+      description:
+        'Checklist gợi ý từ template — items mà ảnh hiện trường BẮT BUỘC phải có để pass. ' +
+        '5-15 items là hợp lý.',
+      items: {
+        type: 'object',
+        properties: {
+          label: {
+            type: 'string',
+            description: 'Tên ngắn item, vd "Standee 49.90 vàng"',
+          },
+          required: {
+            type: 'boolean',
+            description: 'true nếu missing = fail submission',
+          },
+          note: {
+            type: 'string',
+            description:
+              'Mô tả nhận dạng chi tiết để AI runtime tìm trong ảnh, vd "Standee đứng cao, màu vàng đậm, có giá 49.90 soles, logo Bitel trên cùng"',
+          },
+        },
+        required: ['label', 'required', 'note'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['description', 'suggested_requirements'],
+  additionalProperties: false,
+};
+
+const SYSTEM_PROMPT_TEMPLATE_DESC = `Bạn là chuyên gia QA cho Telecom Big (Peru).
+
+Nhiệm vụ: phân tích ảnh TEMPLATE chuẩn của 1 campaign và sinh ra:
+1. **description**: text mô tả chi tiết template để 1 AI vision khác có thể "hình dung" mà không cần thấy ảnh.
+2. **suggested_requirements**: checklist các item BẮT BUỘC phải có trong ảnh hiện trường để pass.
+
+QUY TẮC:
+
+A. description phải concrete, KHÔNG chung chung:
+   - SAI: "Template có standee và promotor"
+   - ĐÚNG: "Standee đứng cao ~1.8m bên trái khung hình, màu vàng đậm với chữ '49.90 SOLES/MES' nổi bật ở giữa, logo Bitel trắng trên cùng. Promotor mặc áo polo vàng có logo Bitel ngực trái, đứng giữa khung hình..."
+
+B. suggested_requirements:
+   - Mỗi item là 1 visual element CÓ THỂ KIỂM TRA bằng vision (không phải concept trừu tượng)
+   - required=true cho item brand-critical (logo, standee chính, đồng phục)
+   - required=false cho item optional (vd: balloons, banner phụ)
+   - note phải đủ chi tiết để AI runtime nhận diện không nhầm
+
+C. KHÔNG thêm item không thấy trong template. KHÔNG generate yêu cầu chung như "ảnh phải rõ nét" — đó là image quality, không thuộc checklist.
+
+D. Output JSON đúng schema, không thêm field.`;
+
+/**
+ * Sinh template description + suggested requirements từ ảnh template.
+ * 1-time call khi admin upload/edit template. Result được admin review/edit trước khi save.
+ * @param {string} templateImagePath
+ * @param {string} campaignName
+ * @returns {Promise<{description:string, suggested_requirements:Array<{label:string,required:boolean,note:string}>}>}
+ */
+export async function generateTemplateDescription({
+  templateImagePath,
+  campaignName,
+}) {
+  const templateUrl = fileToDataURL(templateImagePath);
+
+  const response = await openai.chat.completions.create({
+    model: await getActiveVisionModel(),
+    max_tokens: 2000,
+    temperature: 0.2,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'template_description',
+        schema: TEMPLATE_DESCRIPTION_SCHEMA,
+        strict: true,
+      },
+    },
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_TEMPLATE_DESC },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text:
+              `Campaign: **${campaignName}**\n\n` +
+              `Đây là ảnh TEMPLATE chuẩn. Hãy:\n` +
+              `1. Mô tả chi tiết (description)\n` +
+              `2. Đề xuất checklist các item bắt buộc cho ảnh hiện trường (suggested_requirements)\n\n` +
+              `Output JSON theo schema.`,
+          },
+          {
+            type: 'image_url',
+            image_url: { url: templateUrl, detail: 'high' },
+          },
+        ],
+      },
+    ],
+  });
+
+  const content = response.choices[0].message.content;
+  return JSON.parse(content);
 }
 
 /**
@@ -432,9 +641,12 @@ export async function evaluateSubmissionImage({
   campaignName,
   campaignRequirements = '',
   requirementsJson = null,
+  templateDescription = null,  // v2: text mô tả template (admin-curated). Null = fallback image mode.
 }) {
   const submissionUrl = fileToDataURL(submissionImagePath);
-  const templateUrl = fileToDataURL(templateImagePath);
+  const useTextMode = await shouldUseTextMode(templateDescription);
+  // Image mode cần load template image. Text mode bỏ qua → tiết kiệm I/O + tokens.
+  const templateUrl = useTextMode ? null : fileToDataURL(templateImagePath);
 
   // Branch theo input type — structured CHECKLIST vs text fallback
   const structured = buildStructuredRequirements(requirementsJson);
@@ -447,9 +659,11 @@ export async function evaluateSubmissionImage({
     return runDetectionMode({
       submissionUrl,
       templateUrl,
+      templateDescription,
       campaignName,
       structured,
       requirementsJson,
+      useTextMode,
     });
   }
 
@@ -464,33 +678,30 @@ export async function evaluateSubmissionImage({
     campaignRequirements ||
     '(Không có yêu cầu cụ thể — đánh giá theo template)';
 
-  const userText = useStructured
-    ? `Campaign: **${campaignName}**\n\n` +
-      `═══════════════════════════════════════\n` +
-      `CHECKLIST (NGUỒN DUY NHẤT — chỉ check các item dưới đây):\n` +
-      `═══════════════════════════════════════\n` +
-      `${requirementsBlock}\n` +
-      `═══════════════════════════════════════\n\n` +
-      'Ảnh 1 = TEMPLATE tham khảo phong cách (KHÔNG phải nguồn yêu cầu).\n' +
-      'Ảnh 2 = ảnh team leader vừa gửi tại điểm bán (cần đánh giá).\n\n' +
-      'Quy trình BẮT BUỘC:\n' +
+  const instructions = useStructured
+    ? 'Quy trình BẮT BUỘC:\n' +
       '1. Duyệt qua TỪNG item trong CHECKLIST trên (theo đúng thứ tự).\n' +
-      '2. Với mỗi item: dùng "Mô tả" để tìm trong Ảnh 2.\n' +
+      '2. Với mỗi item: dùng "Mô tả" để tìm trong ẢNH HIỆN TRƯỜNG.\n' +
       '3. Nếu thấy → ghi exact label vào "matches". Nếu KHÔNG thấy + REQUIRED → ghi exact label vào "issues".\n' +
       '4. KHÔNG thêm item ngoài CHECKLIST vào matches/issues.\n' +
       '5. Tính score theo CÔNG THỨC trong system prompt.\n\n' +
       'Trả về JSON theo schema.'
-    : `Campaign: **${campaignName}**\n\n` +
-      `═══════════════════════════════════════\n` +
-      `YÊU CẦU CỤ THỂ:\n` +
-      `═══════════════════════════════════════\n` +
-      `${requirementsBlock}\n` +
-      `═══════════════════════════════════════\n\n` +
-      'Ảnh 1 = TEMPLATE chuẩn của campaign.\n' +
-      'Ảnh 2 = ảnh team leader vừa gửi tại điểm bán (cần đánh giá).\n\n' +
-      'Hãy đánh giá Ảnh 2 theo "YÊU CẦU CỤ THỂ" ở trên.\n' +
+    : 'Hãy đánh giá ẢNH HIỆN TRƯỜNG theo "YÊU CẦU CỤ THỂ" ở trên.\n' +
       'Chỉ trừ điểm cho REQUIRED items missing. OPTIONAL missing KHÔNG trừ điểm.\n' +
       'Trả về JSON theo schema.';
+
+  const userContent = buildUserContent({
+    submissionUrl,
+    templateUrl,
+    templateDescription,
+    campaignName,
+    requirementsBlock,
+    requirementsHeading: useStructured
+      ? 'CHECKLIST (NGUỒN DUY NHẤT — chỉ check các item dưới đây)'
+      : 'YÊU CẦU CỤ THỂ',
+    instructions,
+    useTextMode,
+  });
 
   const response = await openai.chat.completions.create({
     model: await getActiveVisionModel(),
@@ -506,22 +717,15 @@ export async function evaluateSubmissionImage({
     },
     messages: [
       { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: '**Ảnh 1 — TEMPLATE chuẩn:**' },
-          { type: 'image_url', image_url: { url: templateUrl, detail: 'high' } },
-          { type: 'text', text: '**Ảnh 2 — ảnh team leader vừa gửi:**' },
-          { type: 'image_url', image_url: { url: submissionUrl, detail: 'high' } },
-          { type: 'text', text: userText },
-        ],
-      },
+      { role: 'user', content: userContent },
     ],
   });
 
   const content = response.choices[0].message.content;
   const parsed = JSON.parse(content);
   parsed.issue_boxes = sanitizeIssueBoxes(parsed.issue_boxes, parsed.issues);
+  parsed._templateMode = useTextMode ? 'text' : 'image';
+  parsed._usage = response.usage || null;
   return parsed;
 }
 
@@ -558,6 +762,7 @@ export async function evaluateEndOfDayReport({
   campaignName,
   campaignRequirements,    // ⭐ Phải truyền vào — đừng hardcode
   requirementsJson = null,
+  templateDescription = null,  // v2: pass-through cho text mode
   reportedSubscribers,
   targetSubscribers,
 }) {
@@ -567,6 +772,7 @@ export async function evaluateEndOfDayReport({
     campaignName,
     campaignRequirements: campaignRequirements || '(Không có yêu cầu cụ thể)',
     requirementsJson,
+    templateDescription,
   });
 
   const achieved = reportedSubscribers >= targetSubscribers;

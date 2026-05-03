@@ -61,6 +61,7 @@ export async function updateVisionSettingsAction(formData: FormData) {
   const detectionEnabled = formData.get('detection_enabled') === 'on';
   const cacheEnabled = formData.get('cache_enabled') === 'on';
   const throttleEnabled = formData.get('throttle_enabled') === 'on';
+  const templateAsTextEnabled = formData.get('template_as_text_enabled') === 'on';
   // Configurable throttle window — clamp [1, 300] giây
   const throttleSecRaw = parseInt(String(formData.get('throttle_seconds') || '5'), 10);
   const throttleSec = Number.isFinite(throttleSecRaw)
@@ -74,6 +75,7 @@ export async function updateVisionSettingsAction(formData: FormData) {
   await setSettings([
     { key: 'vision.detection_mode_enabled', value: detectionEnabled ? '1' : '0', isSecret: false },
     { key: 'vision.cache_enabled', value: cacheEnabled ? '1' : '0', isSecret: false },
+    { key: 'vision.template_as_text_enabled', value: templateAsTextEnabled ? '1' : '0', isSecret: false },
     { key: 'submission.throttle_enabled', value: throttleEnabled ? '1' : '0', isSecret: false },
     { key: 'submission.throttle_seconds', value: String(throttleSec), isSecret: false },
     { key: 'vision.model', value: visionModel || null, isSecret: false },
@@ -82,7 +84,7 @@ export async function updateVisionSettingsAction(formData: FormData) {
     userId,
     action: 'settings.update_vision',
     entityType: 'settings',
-    newValue: { detectionEnabled, cacheEnabled, throttleEnabled, throttleSeconds: throttleSec, visionModel: visionModel || '(env fallback)' },
+    newValue: { detectionEnabled, cacheEnabled, throttleEnabled, templateAsTextEnabled, throttleSeconds: throttleSec, visionModel: visionModel || '(env fallback)' },
   });
 
   revalidatePath('/dashboard/config-ai');

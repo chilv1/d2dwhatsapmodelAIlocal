@@ -34,6 +34,14 @@ tags: [context]
 - **Vision cache không invalidate khi đổi model** — nếu admin switch gpt-4o ↔ gpt-4o-mini, cache cũ vẫn dùng. Xem [[decisions/0003-vision-cache-sha256]].
 - **VisionCache table không có TTL/cleanup** — sẽ phình theo thời gian.
 - **`OPENAI_API_KEY` plain text trong `.env`** — `.gitignore` đã chặn (verified `git log` không trả gì), nhưng cần process khác (vd 1Password CLI) cho production.
+- **Vision v2 — `templateDescriptionGeneratedAt` vs `templateImagePath` updatedAt drift** — admin replace template image nhưng quên regenerate description → text mô tả lệch ảnh. UI chưa có warning. Runbook: [[runbooks/regenerate-template-description]].
+
+## Vision v2 — Template-as-text (deployed 2026-05-02)
+
+- ADR: [[decisions/0004-template-as-text-vision]]
+- Token saving production: ~20% input + ~35% latency (benchmark)
+- Setting toggle: `vision.template_as_text_enabled` (default ON), per-campaign auto-fallback khi chưa có description
+- Dashboard stats: `/dashboard/config-ai` → "Vision v2" card
 
 ## Roadmap (từ README)
 - [ ] Auto restart Puppeteer khi WhatsApp disconnect

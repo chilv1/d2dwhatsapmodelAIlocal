@@ -16,6 +16,7 @@ import { Select } from '@/components/ui/select';
 import { ArrowLeft, ImageIcon } from 'lucide-react';
 import { updateCampaignAction } from '@/lib/actions/campaign';
 import { CampaignRequirementsEditor } from '@/components/campaign-requirements-editor';
+import { TemplateDescriptionGenerator } from '@/components/template-description-generator';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,6 +115,16 @@ export default async function EditCampaignPage({ params }: { params: Params }) {
                 rows={2}
                 defaultValue={campaign.description || ''}
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <Label>Mô tả template (Vision v2 — text thay cho image)</Label>
+              <TemplateDescriptionGenerator
+                campaignId={campaign.id}
+                defaultDescription={campaign.templateDescription || ''}
+                generatedAt={campaign.templateDescriptionGeneratedAt}
+                hasTemplate={!!campaign.templateImagePath}
               />
             </div>
 

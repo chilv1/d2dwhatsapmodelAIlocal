@@ -57,6 +57,10 @@ model Campaign {
   templateImagePath     String?   @map("template_image_path")
   templateRequirements  String?   @map("template_requirements")
   requirementsJson      String?   @map("requirements_json")
+  // Vision v2 — text mô tả template (AI-generated, admin-reviewed) để bỏ template image trong runtime compare.
+  // Khi có giá trị + flag vision.template_as_text_enabled = '1' → runtime gửi text này thay vì template image.
+  templateDescription            String?   @map("template_description")
+  templateDescriptionGeneratedAt DateTime? @map("template_desc_generated_at")
   // Per-campaign custom keywords (JSON arrays). NULL = fallback ["CAMPAIGN"] / ["END"].
   startKeywords         String?   @map("start_keywords")
   endKeywords           String?   @map("end_keywords")
@@ -305,13 +309,16 @@ model VisionCache {
   imageHash       String    @map("image_hash")          // SHA-256 hex của image buffer
   campaignId      Int       @map("campaign_id")
   detectionMode   Boolean   @default(false) @map("detection_mode")  // Hướng 1 vs Hướng 2 cache riêng
+  // Vision v2: 'image' = template image gửi cùng call, 'text' = template description text
+  // Tách cache vì 2 modes có prompt + input khác nhau → kết quả có thể khác
+  templateMode    String    @default("image") @map("template_mode")
   evaluationJson  String    @map("evaluation_json")     // JSON full evaluation result (incl. gps)
   hits            Int       @default(0)                 // analytics
   createdAt       DateTime  @default(now()) @map("created_at")
   lastHitAt       DateTime? @map("last_hit_at")
   compareImagePath String?  @map("compare_image_path")   // reuse compose result khi cache HIT
 
-  @@unique([imageHash, campaignId, detectionMode], name: "uq_vision_cache")
+  @@unique([imageHash, campaignId, detectionMode, templateMode], name: "uq_vision_cache")
   @@index([campaignId])
   @@map("vision_cache")
 }

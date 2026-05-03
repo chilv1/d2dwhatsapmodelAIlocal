@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Cpu, Save, Activity, ListChecks, Plus, Power, Trash2, Trophy, Building2 } from 'lucide-react';
+import { Cpu, Save, Activity, ListChecks, Plus, Power, Trash2, Trophy, Building2, FileText, Sparkles } from 'lucide-react';
 import { updateVisionSettingsAction, updateFeatureFlagsAction } from '@/lib/actions/settings';
 import { VisionModelPicker } from '@/components/vision-model-picker';
 import {
@@ -56,6 +56,7 @@ export default async function ConfigAIPage() {
   const [
     detectionRaw,
     cacheRaw,
+    templateAsTextRaw,
     throttleRaw,
     throttleSecRaw,
     visionModelRaw,
@@ -63,10 +64,13 @@ export default async function ConfigAIPage() {
     branchesRaw,
     metricsRows,
     topCachedImages,
+    campaignsWithDescCount,
+    campaignsTotalCount,
     rejectionReasons,
   ] = await Promise.all([
     getSetting('vision.detection_mode_enabled'),
     getSetting('vision.cache_enabled'),
+    getSetting('vision.template_as_text_enabled'),
     getSetting('submission.throttle_enabled'),
     getSetting('submission.throttle_seconds'),
     getSetting('vision.model'),
@@ -80,6 +84,8 @@ export default async function ConfigAIPage() {
       orderBy: { hits: 'desc' },
       take: 5,
     }),
+    prisma.campaign.count({ where: { templateDescription: { not: null } } }),
+    prisma.campaign.count(),
     prisma.rejectionReason.findMany({
       orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
     }),
@@ -89,6 +95,8 @@ export default async function ConfigAIPage() {
 
   const detectionEnabled = detectionRaw === '1';
   const cacheEnabled = cacheRaw === '1';
+  // Vision v2 default ON: setting chưa lưu (null) → text mode active. Chỉ tắt khi explicit '0'.
+  const templateAsTextEnabled = templateAsTextRaw !== '0';
   const throttleEnabled = throttleRaw === '1';
   const throttleSeconds = parseInt(throttleSecRaw || '5', 10) || 5;
   const visionModel = visionModelRaw || '';
@@ -115,6 +123,25 @@ export default async function ConfigAIPage() {
   const cacheHitRate =
     totalEvals > 0 ? ((stats.last7d.cacheHit / totalEvals) * 100).toFixed(1) : '0.0';
   const costSavedUsd = (stats.last7d.cacheHit * COST_PER_CALL_USD).toFixed(3);
+
+  // Vision v2 stats: token usage per mode + saving estimate (last 7 days)
+  // gpt-4o pricing: $2.5/M input, $10/M output (approx, 2025-Q1)
+  const tokensInputImage = sumByMetric('vision_tokens_input_image');
+  const tokensInputText = sumByMetric('vision_tokens_input_text');
+  const tokensOutputImage = sumByMetric('vision_tokens_output_image');
+  const tokensOutputText = sumByMetric('vision_tokens_output_text');
+  const callsImage = sumByMetric('vision_calls_image');
+  const callsText = sumByMetric('vision_calls_text');
+  const avgInputImage = callsImage > 0 ? tokensInputImage / callsImage : 0;
+  const avgInputText = callsText > 0 ? tokensInputText / callsText : 0;
+  const tokensSavedPerCall = avgInputImage > 0 && avgInputText > 0
+    ? Math.max(0, avgInputImage - avgInputText)
+    : 0;
+  const tokensSavedTotal = Math.round(tokensSavedPerCall * callsText);
+  const costSavedV2Usd = (tokensSavedTotal * 2.5 / 1_000_000).toFixed(4);
+  const tokenSavingPct = avgInputImage > 0 && avgInputText > 0
+    ? ((1 - avgInputText / avgInputImage) * 100).toFixed(1)
+    : '—';
 
   return (
     <div className="space-y-6">
@@ -198,6 +225,38 @@ export default async function ConfigAIPage() {
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Cache AI evaluation theo SHA-256 image hash + campaign. Cùng ảnh +
                     cùng campaign không gọi API lại — tiết kiệm cost + giảm latency.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="template_as_text_enabled"
+                  name="template_as_text_enabled"
+                  defaultChecked={templateAsTextEnabled}
+                  className="h-4 w-4 mt-0.5 rounded border-input"
+                />
+                <div className="flex-1">
+                  <Label
+                    htmlFor="template_as_text_enabled"
+                    className="text-sm cursor-pointer flex items-center gap-2"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Template-as-text (Vision v2){' '}
+                    {templateAsTextEnabled ? (
+                      <Badge variant="success" className="text-[10px]">ON</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px]">OFF</Badge>
+                    )}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Khi campaign có <code>templateDescription</code> (admin generate trong edit page) →
+                    runtime gửi text mô tả thay vì template image. Tiết kiệm ~20% input tokens, giảm latency ~35%.
+                    Campaign chưa có description sẽ tự fallback về image mode.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    <Sparkles className="h-3 w-3 inline" /> Coverage: <strong>{campaignsWithDescCount}/{campaignsTotalCount}</strong> campaigns đã có description.
                   </p>
                 </div>
               </div>
@@ -317,6 +376,50 @@ export default async function ConfigAIPage() {
               <span>Cost estimate: ${COST_PER_CALL_USD}/call (gpt-4o vision)</span>
             </div>
           </div>
+
+          {/* Vision v2: text-mode stats */}
+          {(callsImage > 0 || callsText > 0) && (
+            <div className="border-t pt-3">
+              <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                Vision v2 — text vs image mode (last 7 days)
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Image-mode calls</div>
+                  <div className="text-xl font-bold tabular-nums">{callsImage}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    avg {Math.round(avgInputImage).toLocaleString()} in-tokens/call
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Text-mode calls</div>
+                  <div className="text-xl font-bold tabular-nums text-blue-600">{callsText}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    avg {Math.round(avgInputText).toLocaleString()} in-tokens/call
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Token saving</div>
+                  <div className="text-xl font-bold tabular-nums text-green-600">
+                    {tokenSavingPct === '—' ? '—' : `${tokenSavingPct}%`}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {tokensSavedTotal.toLocaleString()} tokens
+                  </div>
+                </div>
+                <div className="rounded-md border p-3">
+                  <div className="text-xs text-muted-foreground">Cost saved (v2)</div>
+                  <div className="text-xl font-bold tabular-nums text-green-600">
+                    ${costSavedV2Usd}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    @ $2.5/M input tokens
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Top cached images */}
           {topCachedImages.length > 0 && (

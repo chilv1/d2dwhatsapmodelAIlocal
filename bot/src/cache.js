@@ -37,9 +37,15 @@ export function imageHash(filePathOrBuffer) {
 
 /**
  * Lookup cached evaluation. Returns null nếu miss hoặc cache disabled.
+ * v2: thêm templateMode ('image'|'text') vào key — 2 modes có prompt khác → kết quả khác → cache riêng.
  * @returns {Promise<{evaluation:object, compareImagePath:string|null}|null>}
  */
-export async function getCachedEvaluation({ imageHash, campaignId, detectionMode }) {
+export async function getCachedEvaluation({
+  imageHash,
+  campaignId,
+  detectionMode,
+  templateMode = 'image',
+}) {
   try {
     const row = await prisma.visionCache.findUnique({
       where: {
@@ -47,6 +53,7 @@ export async function getCachedEvaluation({ imageHash, campaignId, detectionMode
           imageHash,
           campaignId,
           detectionMode: !!detectionMode,
+          templateMode,
         },
       },
     });
@@ -76,6 +83,7 @@ export async function setCachedEvaluation({
   imageHash,
   campaignId,
   detectionMode,
+  templateMode = 'image',
   evaluation,
   compareImagePath = null,
 }) {
@@ -86,6 +94,7 @@ export async function setCachedEvaluation({
           imageHash,
           campaignId,
           detectionMode: !!detectionMode,
+          templateMode,
         },
       },
       update: {
@@ -96,6 +105,7 @@ export async function setCachedEvaluation({
         imageHash,
         campaignId,
         detectionMode: !!detectionMode,
+        templateMode,
         evaluationJson: JSON.stringify(evaluation),
         compareImagePath,
       },
@@ -128,16 +138,18 @@ export function clearThrottle({ senderNumber, campaignId }) {
 
 /**
  * Tăng counter daily cho 1 metric. Format date 'YYYY-MM-DD' local.
+ * @param {string} metric — tên metric, vd 'cache_hit', 'vision_tokens_input_text'
+ * @param {number} [amount=1] — số lượng tăng (vd token count, không chỉ event count)
  * Không throw — log warn nếu fail.
  */
-export async function recordMetric(metric) {
+export async function recordMetric(metric, amount = 1) {
   try {
     const now = new Date();
     const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     await prisma.botMetric.upsert({
       where: { uq_metric_date: { date, metric } },
-      update: { count: { increment: 1 } },
-      create: { date, metric, count: 1 },
+      update: { count: { increment: amount } },
+      create: { date, metric, count: amount },
     });
   } catch (err) {
     logger.warn({ err: err.message, metric }, 'recordMetric failed');
